@@ -1,0 +1,136 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 1. Global Safety Net: Default Deny All
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Reuseable global helpers for validation (The Seven Pillars of Hardened Rules)
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Checking if the user has an ID registered in the admins collection
+    function isAdmin() {
+      return isSignedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Material validation helper
+    function isValidMaterial(data) {
+      return data.keys().hasAll(['id', 'name', 'category', 'price', 'unit', 'brand', 'supplierId', 'supplierName', 'supplierCity', 'supplierState', 'stockLevel', 'lastVerified', 'specifications', 'isLiveStockSynced', 'priceTrend'])
+        && data.keys().size() == 15
+        && data.id is string && data.id.size() <= 128
+        && data.name is string && data.name.size() <= 256
+        && data.category is string && data.category.size() <= 128
+        && data.price is int && data.price >= 0
+        && data.unit is string && data.unit.size() <= 64
+        && data.brand is string && data.brand.size() <= 128
+        && data.supplierId is string && data.supplierId.size() <= 128
+        && data.supplierName is string && data.supplierName.size() <= 256
+        && data.supplierCity is string && data.supplierCity.size() <= 128
+        && data.supplierState is string && data.supplierState.size() <= 128
+        && data.stockLevel is int && data.stockLevel >= 0
+        && data.lastVerified is string && data.lastVerified.size() <= 64
+        && data.specifications is string && data.specifications.size() <= 2000
+        && data.isLiveStockSynced is bool
+        && data.priceTrend is string && (data.priceTrend == 'up' || data.priceTrend == 'down' || data.priceTrend == 'stable');
+    }
+
+    // Supplier validation helper
+    function isValidSupplier(data) {
+      return data.keys().hasAll(['id', 'name', 'marketName', 'city', 'state', 'contactPhone', 'rating', 'isVerified', 'apiConnected', 'apiLatencyMs'])
+        && data.keys().size() == 10
+        && data.id is string && data.id.size() <= 128
+        && data.name is string && data.name.size() <= 256
+        && data.marketName is string && data.marketName.size() <= 256
+        && data.city is string && data.city.size() <= 128
+        && data.state is string && data.state.size() <= 128
+        && data.contactPhone is string && data.contactPhone.size() <= 64
+        && (data.rating is int || data.rating is float) && data.rating >= 0 && data.rating <= 5
+        && data.isVerified is bool
+        && data.apiConnected is bool
+        && data.apiLatencyMs is int && data.apiLatencyMs >= 0;
+    }
+
+    // Search cache validation helper
+    function isValidSearchCache(data) {
+      return data.keys().hasAll(['queryKey', 'query', 'region', 'category', 'answer', 'lastUpdated', 'materials', 'apiLogs'])
+        && data.keys().size() == 8
+        && data.queryKey is string && data.queryKey.size() <= 256
+        && data.query is string && data.query.size() <= 128
+        && data.region is string && data.region.size() <= 64
+        && data.category is string && data.category.size() <= 64
+        && data.answer is string && data.answer.size() <= 10000
+        && data.lastUpdated is string && data.lastUpdated.size() <= 64
+        && data.materials is list && data.materials.size() <= 100
+        && data.apiLogs is list && data.apiLogs.size() <= 50;
+    }
+
+    // Lead validation helper
+    function isValidLead(data) {
+      return data.keys().hasAll(['id', 'name', 'phone', 'email', 'category', 'region', 'materialsNeeded', 'projectStage', 'timeline', 'source', 'status', 'createdAt'])
+        && data.keys().size() == 12
+        && data.id is string && data.id.size() <= 128
+        && data.name is string && data.name.size() <= 256
+        && data.phone is string && data.phone.size() <= 64
+        && data.email is string && data.email.size() <= 256
+        && data.category is string && data.category.size() <= 128
+        && data.region is string && data.region.size() <= 128
+        && data.materialsNeeded is string && data.materialsNeeded.size() <= 5000
+        && data.projectStage is string && data.projectStage.size() <= 128
+        && data.timeline is string && data.timeline.size() <= 128
+        && data.source is string && data.source.size() <= 512
+        && data.status is string && (data.status == 'new' || data.status == 'contacting' || data.status == 'passed_to_merchant' || data.status == 'closed')
+        && data.createdAt is string && data.createdAt.size() <= 64;
+    }
+
+    // Collection: Admins directory
+    match /admins/{adminId} {
+      allow read: if isSignedIn();
+      allow write: if false; // Closed write gate, manually seeded in GCP
+    }
+
+    // Collection: Materials Catalog
+    match /materials/{materialId} {
+      allow read: if true; // Public access for search results
+      allow create: if isAdmin() && isValidMaterial(incoming()) && isValidId(materialId);
+      allow update: if isAdmin() && isValidMaterial(incoming()) && isValidId(materialId);
+      allow delete: if isAdmin();
+    }
+
+    // Collection: Suppliers Directory
+    match /suppliers/{supplierId} {
+      allow read: if true; // Publicly readable supplier details
+      allow create: if isAdmin() && isValidSupplier(incoming()) && isValidId(supplierId);
+      allow update: if isAdmin() && isValidSupplier(incoming()) && isValidId(supplierId);
+      allow delete: if isAdmin();
+    }
+
+    // Collection: Search answer caches
+    match /search_cache/{cacheId} {
+      allow read: if true; // Instant lookup for frequent searches
+      allow create, update: if isValidSearchCache(incoming()) && isValidId(cacheId);
+      allow delete: if false; // Prevention of cache pollution deletion
+    }
+
+    // Collection: Sourcing and Quote Leads
+    match /leads/{leadId} {
+      allow create: if isValidLead(incoming()) && isValidId(leadId);
+      allow read, update, delete: if isAdmin(); // Strict Zero-Trust PII protection
+    }
+  }
+}

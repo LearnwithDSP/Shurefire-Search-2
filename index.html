@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Shurefire | Sovereign Materials Intelligence & Direct Factory Match Network</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    
+    <script>
+      // Sanitized raw credentials (trimmed of any accidental spaces/quotes)
+      const RAW_URL = "https://ickghlgpkikwrelabayo.supabase.co";
+      const RAW_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imlja2dobGdwa2lrd3JlbGFiYXlvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQyMDM0MjgsImV4cCI6MjA5OTc3OTQyOH0.PdnGKbglH2Yc0tWjnlXEgjr53HN6L9lUals6I0G5Cvc";
+
+      const REAL_URL = RAW_URL.trim().replace(/^["']|["']$/g, "");
+      const REAL_KEY = RAW_KEY.trim().replace(/^["']|["']$/g, "");
+
+      // 1. Establish Globals
+      window.SUPABASE_URL = REAL_URL;
+      window.SUPABASE_ANON_KEY = REAL_KEY;
+      window.VITE_SUPABASE_URL = REAL_URL;
+      window.VITE_SUPABASE_ANON_KEY = REAL_KEY;
+
+      const SUPABASE_URL = REAL_URL;
+      const SUPABASE_ANON_KEY = REAL_KEY;
+
+      // 2. Intercept and Rewrite Network Traffic + Inject Required Headers
+      const originalFetch = window.fetch;
+      window.fetch = async function(...args) {
+        let url = args[0];
+        let options = args[1] || {};
+
+        if (typeof url === 'string') {
+          // Rule A: Intercept the config fetch
+          if (url.includes('/api/supabase-config')) {
+            console.log("⚡ [Shurefire Interceptor] Injecting clean credentials into config request.");
+            return new Response(JSON.stringify({
+              SUPABASE_URL: REAL_URL,
+              SUPABASE_ANON_KEY: REAL_KEY,
+              VITE_SUPABASE_URL: REAL_URL,
+              VITE_SUPABASE_ANON_KEY: REAL_KEY
+            }), {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' }
+            });
+          }
+
+          // Rule B: Redirect any calls made to the fake placeholder domain
+          if (url.includes('your-supabase-project-id.supabase.co')) {
+            const rewrittenUrl = url.replace('your-supabase-project-id.supabase.co', 'ickghlgpkikwrelabayo.supabase.co');
+            console.log(`⚡ [Shurefire Interceptor] Redirecting: ${url} -> ${rewrittenUrl}`);
+            url = rewrittenUrl;
+            args[0] = rewrittenUrl;
+          }
+
+          // Rule C: Force exact Auth Header Injection *ONLY* for your Supabase project
+          if (url.includes('ickghlgpkikwrelabayo.supabase.co')) {
+            options.headers = options.headers || {};
+            // If it's a Headers object, set it there; otherwise, treat it as a plain object
+            if (options.headers instanceof Headers) {
+              options.headers.set('apikey', REAL_KEY);
+              options.headers.set('Authorization', `Bearer ${REAL_KEY}`);
+            } else {
+              options.headers['apikey'] = REAL_KEY;
+              options.headers['Authorization'] = `Bearer ${REAL_KEY}`;
+            }
+
+            // --- BULLETPROOF ID CLEANER ---
+            // If the React bundle sends an empty, null, undefined, or custom text 'kb_' ID, 
+            // we remove it so PostgreSQL fallback defaults can trigger.
+            if (options.body && typeof options.body === 'string') {
+              try {
+                let payload = JSON.parse(options.body);
+                
+                const cleanItem = (item) => {
+                  if (item && item.hasOwnProperty('id')) {
+                    const idVal = item.id;
+                    if (
+                      idVal === null || 
+                      idVal === undefined || 
+                      idVal === '' || 
+                      (typeof idVal === 'string' && idVal.startsWith('kb_'))
+                    ) {
+                      delete item.id;
+                    }
+                  }
+                  return item;
+                };
+
+                if (Array.isArray(payload)) {
+                  payload = payload.map(cleanItem);
+                } else {
+                  payload = cleanItem(payload);
+                }
+                
+                options.body = JSON.stringify(payload);
+              } catch (e) {
+                console.warn("Could not parse payload body for ID cleanup:", e);
+              }
+            }
+            // -------------------------------
+
+            args[1] = options;
+          }
+        }
+
+        return originalFetch.apply(this, args);
+      };
+
+      // 3. Initialize CDN-level Supabase client if loaded
+      if (typeof supabase !== 'undefined') {
+        const { createClient } = supabase;
+        window.dbClient = createClient(REAL_URL, REAL_KEY);
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

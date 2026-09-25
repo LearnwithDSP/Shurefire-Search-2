@@ -1,0 +1,121 @@
+{
+  "entities": {
+    "material": {
+      "title": "Material",
+      "description": "Represents cached pricing and stock levels of a building material from a supplier.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier of the material" },
+        "name": { "type": "string", "description": "Display name of the material" },
+        "category": { "type": "string", "description": "Material category" },
+        "price": { "type": "integer", "description": "Current price in NGN" },
+        "unit": { "type": "string", "description": "Packaging unit (e.g., 50kg Bag)" },
+        "brand": { "type": "string", "description": "Brand manufacturer" },
+        "supplierId": { "type": "string", "description": "Supplier ID reference" },
+        "supplierName": { "type": "string", "description": "Supplier's company name" },
+        "supplierCity": { "type": "string", "description": "Supplier's operation city" },
+        "supplierState": { "type": "string", "description": "Supplier's operation state" },
+        "stockLevel": { "type": "integer", "description": "Current quantity in stock" },
+        "lastVerified": { "type": "string", "format": "date-time", "description": "ISO timestamp of last inventory check" },
+        "specifications": { "type": "string", "description": "Technical details and metrics of the material" },
+        "isLiveStockSynced": { "type": "boolean", "description": "Whether stock data is synced in real-time with supplier API" },
+        "priceTrend": { "type": "string", "enum": ["up", "down", "stable"], "description": "Price direction indicator" }
+      },
+      "required": ["id", "name", "category", "price", "unit", "brand", "supplierId", "supplierName", "supplierCity", "supplierState", "stockLevel", "lastVerified", "specifications", "isLiveStockSynced", "priceTrend"]
+    },
+    "supplier": {
+      "title": "Supplier",
+      "description": "Information about a physical block yards, timber dealers or steel merchants in Nigeria.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier of the supplier" },
+        "name": { "type": "string", "description": "Corporate supplier name" },
+        "marketName": { "type": "string", "description": "Physical market location (e.g. Coker, Dei-Dei)" },
+        "city": { "type": "string", "description": "Supplier city" },
+        "state": { "type": "string", "description": "Supplier state" },
+        "contactPhone": { "type": "string", "description": "Direct phone line" },
+        "rating": { "type": "number", "description": "Average review rating" },
+        "isVerified": { "type": "boolean", "description": "Verified status" },
+        "apiConnected": { "type": "boolean", "description": "Real-time stocking API connection status" },
+        "apiLatencyMs": { "type": "integer", "description": "API response latency in milliseconds" }
+      },
+      "required": ["id", "name", "marketName", "city", "state", "contactPhone", "rating", "isVerified", "apiConnected", "apiLatencyMs"]
+    },
+    "search_cache": {
+      "title": "Search Cache Item",
+      "description": "Cached search answer and corresponding structural material list to speed up repeat lookups.",
+      "type": "object",
+      "properties": {
+        "queryKey": { "type": "string", "description": "A compound key of query-region-category format" },
+        "query": { "type": "string", "description": "Normalized text search query" },
+        "region": { "type": "string", "description": "Filtered region key" },
+        "category": { "type": "string", "description": "Filtered category key" },
+        "projectTitle": { "type": "string", "description": "Title of the project estimate" },
+        "isDuplex": { "type": "boolean", "description": "Whether project is a duplex structure" },
+        "isSwampy": { "type": "boolean", "description": "Whether project is on swampy soil" },
+        "isPremium": { "type": "boolean", "description": "Whether premium quality materials are used" },
+        "isBasic": { "type": "boolean", "description": "Whether basic/economy materials are used" },
+        "intent_type": { "type": "string", "description": "Query intent type" },
+        "finish_tier": { "type": "string", "description": "Material finish level tier" },
+        "quickAnswer": { "type": "string", "description": "Brief text summary of estimate results" },
+        "featuredAnswer": { "type": "string", "description": "Detailed markdown explanation of estimate results" },
+        "substructure": { "type": "array", "description": "List of substructure materials needed" },
+        "wallingRoofing": { "type": "array", "description": "List of walling and roofing materials needed" },
+        "finishes": { "type": "array", "description": "List of finishes materials needed" },
+        "substructureTotal": { "type": "integer", "description": "Subtotal for substructure materials in NGN" },
+        "wallingRoofingTotal": { "type": "integer", "description": "Subtotal for walling and roofing materials in NGN" },
+        "finishesTotal": { "type": "integer", "description": "Subtotal for finishes materials in NGN" },
+        "deliveryLogistics": { "type": "integer", "description": "Logistics and delivery cost in NGN" },
+        "grandTotal": { "type": "integer", "description": "Grand total project estimate in NGN" },
+        "searchResults": { "type": "array", "description": "Relevant authority sourcing links and blocks" },
+        "sovereignRates": { "type": "array", "description": "Sovereign material pricing references used" },
+        "groundingSources": { "type": "array", "description": "List of knowledge base grounding sources" },
+        "lastUpdated": { "type": "string", "format": "date-time", "description": "ISO timestamp of cache write" }
+      },
+      "required": [
+        "queryKey", "query", "region", "category", "projectTitle", "isDuplex", "isSwampy", "isPremium", "isBasic",
+        "intent_type", "finish_tier", "quickAnswer", "featuredAnswer", "substructure", "wallingRoofing", "finishes",
+        "substructureTotal", "wallingRoofingTotal", "finishesTotal", "deliveryLogistics", "grandTotal", "searchResults",
+        "sovereignRates", "groundingSources", "lastUpdated"
+      ]
+    },
+    "lead": {
+      "title": "Procurement Lead",
+      "description": "A direct wholesale callback or RFQ lead submitted subtly by a researcher/builder to buy materials.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique string ID for the lead" },
+        "name": { "type": "string", "description": "The prospect's display name" },
+        "phone": { "type": "string", "description": "Contact WhatsApp / mobile number" },
+        "email": { "type": "string", "description": "Optional contact email address" },
+        "category": { "type": "string", "description": "Primary material category searched" },
+        "region": { "type": "string", "description": "Lagos, Abuja, or other select region" },
+        "materialsNeeded": { "type": "string", "description": "Detailed text dump of active shopping cart or calculator list" },
+        "projectStage": { "type": "string", "description": "Project lifecycle phase" },
+        "timeline": { "type": "string", "description": "Preferred delivery timeline" },
+        "source": { "type": "string", "description": "Context log of originating widget/search query" },
+        "status": { "type": "string", "enum": ["new", "contacting", "passed_to_merchant", "closed"], "description": "Internal status representation" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "ISO log of lead generation" }
+      },
+      "required": ["id", "name", "phone", "email", "category", "region", "materialsNeeded", "projectStage", "timeline", "source", "status", "createdAt"]
+    }
+  },
+  "firestore": {
+    "materials/{materialId}": {
+      "schema": "material",
+      "description": "Collection of cached material items with pricing and stock logs."
+    },
+    "suppliers/{supplierId}": {
+      "schema": "supplier",
+      "description": "Collection of active supplier records synced to Firestore."
+    },
+    "search_cache/{cacheId}": {
+      "schema": "search_cache",
+      "description": "Analytical search history cache for instant rendering and sync."
+    },
+    "leads/{leadId}": {
+      "schema": "lead",
+      "description": "List of massive callback and wholesale matching leads secured."
+    }
+  }
+}
