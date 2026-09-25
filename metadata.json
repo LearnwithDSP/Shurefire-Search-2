@@ -1,6 +1,6 @@
 {
   "name": "SHUREFIRE",
-  "description": "AI-powered search engine platform for building materials, pricing, and availability in Nigeria.",
+  "description": "#1 Construction Search Engine In Africa - Developed for building Enthusiats",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

@@ -461,13 +461,15 @@ Source: Shurefire Sovereign Construction Search (https://shurefire.ng)`;
           {/* Center Search Console Column */}
           <main className="w-full max-w-3xl mx-auto flex flex-col items-center justify-center space-y-6 my-auto text-center px-2">
             
-            {/* Center Branding: Signature bold "Shurefire" in #ae2424 */}
-            <div className="flex flex-col items-center cursor-default select-none animate-fade-in pb-2">
-              <h1 className="text-6xl sm:text-7xl md:text-8xl font-black tracking-tight text-[#ae2424] drop-shadow-2xs">
+            {/* Center Branding: Big, Bold, Neat SaaS-like Hero Header */}
+            <div className="flex flex-col items-center cursor-default select-none animate-fade-in pb-3">
+              <h1 className="text-6xl sm:text-7xl md:text-8xl lg:text-9xl font-black tracking-[-0.03em] text-[#ae2424] leading-tight select-none">
                 Shurefire
               </h1>
-              <p className="mt-1 text-xs sm:text-sm font-medium tracking-wide uppercase text-[#64748b]">
-                Sovereign Construction & Materials Search
+              <p className="mt-2.5 sm:mt-3.5 text-sm sm:text-base md:text-lg font-medium text-slate-600 tracking-tight text-center max-w-2xl px-4">
+                <span className="font-bold text-slate-900">#1 Construction Search Engine In Africa</span>
+                <span className="text-slate-400 mx-2 font-normal hidden sm:inline">-</span>
+                <span className="block sm:inline text-slate-600 font-medium">Developed for building Enthusiats</span>
               </p>
             </div>
 
