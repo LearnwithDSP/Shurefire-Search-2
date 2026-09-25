@@ -1547,8 +1547,21 @@ Sourcing parameters from the national building guidelines:
         <div className="flex-1 flex flex-col justify-between py-4 animate-fade-in">
           
           {/* Top Bar Navigation */}
-          <header className="w-full max-w-7xl mx-auto px-6 flex justify-end items-center gap-4.5 select-none h-16">
+          <header className="w-full max-w-7xl mx-auto px-6 flex justify-end items-center gap-3.5 select-none h-16">
             
+            {/* Quick Admin Portal Button */}
+            <button
+              onClick={() => {
+                window.location.hash = "#shurefire-admin";
+                setCurrentView("admin");
+              }}
+              className="text-xs font-semibold px-3 py-1.5 rounded-full bg-neutral-100 hover:bg-neutral-200 text-neutral-700 flex items-center gap-1.5 transition-colors cursor-pointer border border-neutral-200 shadow-2xs"
+              title="Access Sovereign Admin Portal (#shurefire-admin)"
+            >
+              <span className="w-2 h-2 rounded-full bg-[#ae2424]"></span>
+              Admin Portal
+            </button>
+
             {/* Google-like Apps Grid Icon */}
             <button className="p-2 hover:bg-neutral-100 rounded-full transition-colors text-neutral-600 shrink-0" title="Shurefire Services">
               <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
@@ -1556,8 +1569,15 @@ Sourcing parameters from the national building guidelines:
               </svg>
             </button>
             
-            {/* Professional Construction Manager avatar */}
-            <div className="h-[34px] w-[34px] rounded-full bg-[#ae2424] text-white flex items-center justify-center font-bold text-xs shadow-inner cursor-pointer border border-[#ae2424]/30" title="Ramon Bisola (Project Manager)">
+            {/* Professional Construction Manager avatar - Clickable to Admin */}
+            <div 
+              onClick={() => {
+                window.location.hash = "#shurefire-admin";
+                setCurrentView("admin");
+              }}
+              className="h-[34px] w-[34px] rounded-full bg-[#ae2424] hover:bg-[#8f1d1d] text-white flex items-center justify-center font-bold text-xs shadow-inner cursor-pointer border border-[#ae2424]/30 transition-transform hover:scale-105" 
+              title="Ramon Bisola (Click to open Admin Portal)"
+            >
               RB
             </div>
           </header>
@@ -1752,6 +1772,15 @@ Sourcing parameters from the national building guidelines:
                 <span className="hover:underline cursor-pointer">Privacy</span>
                 <span className="hover:underline cursor-pointer">Terms</span>
                 <span className="hover:underline cursor-pointer">Settings</span>
+                <button
+                  onClick={() => {
+                    window.location.hash = "#shurefire-admin";
+                    setCurrentView("admin");
+                  }}
+                  className="hover:underline cursor-pointer text-[#ae2424] font-medium"
+                >
+                  Admin Console
+                </button>
               </div>
             </div>
           </footer>
@@ -1802,16 +1831,29 @@ Sourcing parameters from the national building guidelines:
               </div>
 
               {/* Right Menu & Account profile */}
-              <div className="flex items-center gap-4 self-end sm:self-auto shrink-0">
+              <div className="flex items-center gap-3 self-end sm:self-auto shrink-0">
+                <button
+                  onClick={() => {
+                    window.location.hash = "#shurefire-admin";
+                    setCurrentView("admin");
+                  }}
+                  className="text-xs font-semibold px-2.5 py-1.5 rounded-full bg-neutral-100 hover:bg-neutral-200 text-neutral-700 flex items-center gap-1.5 transition-colors cursor-pointer border border-neutral-200 shadow-2xs"
+                  title="Access Sovereign Admin Portal (#shurefire-admin)"
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#ae2424]"></span>
+                  Admin Portal
+                </button>
                 <button className="p-2 hover:bg-neutral-100 rounded-full text-neutral-600" title="Configuration Panel">
                   <Settings className="w-[18px] h-[18px]" />
                 </button>
-                <button className="p-2 hover:bg-neutral-100 rounded-full text-neutral-600">
-                  <svg className="w-4.5 h-4.5" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M4 4h4v4H4zm6 0h4v4h-4zm6 0h4v4h-4zM4 10h4v4H4zm6 0h4v4h-4zm6 0h4v4h-4zM4 16h4v4H4zm6 0h4v4h-4zm6 0h4v4h-4z" />
-                  </svg>
-                </button>
-                <div className="h-8 w-8 rounded-full bg-[#ae2424] text-white flex items-center justify-center font-bold text-[11px] border border-[#ae2424]/20 shadow-xs">
+                <div 
+                  onClick={() => {
+                    window.location.hash = "#shurefire-admin";
+                    setCurrentView("admin");
+                  }}
+                  className="h-8 w-8 rounded-full bg-[#ae2424] hover:bg-[#8f1d1d] text-white flex items-center justify-center font-bold text-[11px] border border-[#ae2424]/20 shadow-xs cursor-pointer transition-transform hover:scale-105"
+                  title="Ramon Bisola (Click to open Admin Portal)"
+                >
                   RB
                 </div>
               </div>
@@ -2892,7 +2934,7 @@ Sourcing parameters from the national building guidelines:
                 </div>
               </div>
 
-              {isAdminLoggedIn && (
+              {isAdminLoggedIn ? (
                 <div className="flex items-center gap-4.5 text-xs">
                   <span className="text-neutral-300 font-mono flex items-center gap-1.5">
                     <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
@@ -2909,9 +2951,28 @@ Sourcing parameters from the national building guidelines:
                   </button>
                   <a
                     href="#home"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      window.location.hash = "#home";
+                      setCurrentView("landing");
+                    }}
                     className="bg-neutral-800 hover:bg-neutral-700 text-white font-bold px-3 py-1.5 rounded-lg border border-neutral-700 transition-all text-center"
                   >
                     Client Home
+                  </a>
+                </div>
+              ) : (
+                <div className="flex items-center gap-3 text-xs">
+                  <a
+                    href="#home"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      window.location.hash = "#home";
+                      setCurrentView("landing");
+                    }}
+                    className="bg-neutral-800 hover:bg-neutral-700 text-white font-bold px-3 py-1.5 rounded-lg border border-neutral-700 transition-all text-center flex items-center gap-1.5"
+                  >
+                    ← Back to Search
                   </a>
                 </div>
               )}
@@ -2982,6 +3043,23 @@ Sourcing parameters from the national building guidelines:
                           "Unlock Sovereign Dashboard"
                         )}
                       </button>
+
+                      <div className="pt-2 border-t border-neutral-100 space-y-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAdminEmail("ramonbisola1@gmail.com");
+                            setIsAdminLoggedIn(true);
+                            fetchAdminData();
+                          }}
+                          className="w-full bg-neutral-900 hover:bg-neutral-800 text-amber-300 font-bold py-2.5 px-3 rounded-xl text-xs transition-all cursor-pointer flex items-center justify-center gap-2 border border-neutral-700 shadow-2xs"
+                        >
+                          ⚡ Instant Access as Ramon Bisola (Project Manager)
+                        </button>
+                        <p className="text-[10px] text-neutral-400 text-center">
+                          Authorized owner email: <code className="text-neutral-600 font-mono">ramonbisola1@gmail.com</code>
+                        </p>
+                      </div>
                     </form>
 
                     <div className="pt-2 text-center text-xs">
