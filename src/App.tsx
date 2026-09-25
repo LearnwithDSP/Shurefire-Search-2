@@ -28,6 +28,8 @@ import { getSupabase } from "./supabase";
 import { INITIAL_MATERIALS, NIGERIAN_SUPPLIERS } from "./mockDatabase";
 import { MaterialItem, MaterialCategory, Supplier } from "./types";
 import AdminLogin from "./components/AdminLogin";
+import AdminDashboard from "./components/AdminDashboard";
+import SearchResultsPage from "./components/SearchResultsPage";
 
 interface SpecCalculation {
   cementBags: number;
@@ -404,16 +406,34 @@ Source: Shurefire Sovereign Construction Search (https://shurefire.ng)`;
     }
   }
 
-  if (currentPath === "/admin/dashboard" && !isAdminLoggedIn) {
+  if (currentPath === "/admin/dashboard" || ((currentPath === "/admin" || currentPath === "/admin/login") && isAdminLoggedIn)) {
+    if (!isAdminLoggedIn) {
+      return (
+        <AdminLogin
+          onLoginSuccess={(user) => {
+            setIsAdminLoggedIn(true);
+            if (user?.email) setAdminEmail(user.email);
+            setCurrentPath("/admin/dashboard");
+            fetchAdminData();
+          }}
+          redirectTo="/admin/dashboard"
+        />
+      );
+    }
     return (
-      <AdminLogin
-        onLoginSuccess={(user) => {
-          setIsAdminLoggedIn(true);
-          if (user?.email) setAdminEmail(user.email);
-          setCurrentPath("/admin/dashboard");
-          fetchAdminData();
+      <AdminDashboard
+        userEmail={adminEmail}
+        onSignOut={() => {
+          setIsAdminLoggedIn(false);
+          const client = (typeof window !== "undefined" && window.dbClient) || getSupabase();
+          client?.auth?.signOut?.();
+          window.history.pushState({}, "", "/");
+          setCurrentPath("/");
         }}
-        redirectTo="/admin/dashboard"
+        onNavigateHome={() => {
+          window.history.pushState({}, "", "/");
+          setCurrentPath("/");
+        }}
       />
     );
   }
@@ -546,401 +566,19 @@ Source: Shurefire Sovereign Construction Search (https://shurefire.ng)`;
 
         </div>
       ) : (
-
-        /* ========================================================================= */
-        /* 2. SEARCH ENGINE RESULTS PAGE VIEW (State: hasSearched)                   */
-        /* ========================================================================= */
-        <div className="flex-1 flex flex-col bg-white">
-          
-          {/* Compact Sticky Header */}
-          <header className="sticky top-0 bg-white border-b border-[#e2e8f0] z-20 select-none shadow-2xs">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              
-              {/* Left Column: Logo & Aligned Search Bar */}
-              <div className="flex items-center gap-4 flex-1">
-                
-                {/* Compact "Shurefire" logo in #ae2424 pinned top-left */}
-                <button
-                  onClick={handleResetToLanding}
-                  className="text-2xl sm:text-3xl font-black tracking-tight text-[#ae2424] shrink-0 hover:opacity-90 transition-opacity cursor-pointer text-left"
-                  title="Return to Shurefire Homepage"
-                >
-                  Shurefire
-                </button>
-
-                {/* Rounded Search Input Aligned Next to Logo */}
-                <form onSubmit={handleSearchSubmit} className="flex-1 max-w-2xl">
-                  <div className="relative flex items-center bg-white rounded-full border border-slate-300 shadow-sm focus-within:border-[#ae2424] focus-within:ring-2 focus-within:ring-[#ae2424]/10 transition-all px-3.5 py-2 sm:py-2.5">
-                    <Search className="h-4 w-4 text-[#ae2424] shrink-0 mr-2.5" />
-                    <input
-                      type="text"
-                      value={query}
-                      onChange={(e) => setQuery(e.target.value)}
-                      placeholder="Search building materials, specs, or estimates..."
-                      className="w-full bg-transparent text-[#0f172a] text-sm focus:outline-none placeholder:text-[#64748b]"
-                    />
-                    {query && (
-                      <button
-                        type="button"
-                        onClick={() => setQuery("")}
-                        className="p-1 text-slate-400 hover:text-slate-600 rounded-full transition-colors cursor-pointer"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
-                </form>
-              </div>
-
-              {/* Right Side Status Pill & Profile */}
-              <div className="flex items-center gap-3 self-end sm:self-auto shrink-0">
-                <button
-                  onClick={() => setShowAdminModal(true)}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-[#e2e8f0] bg-white text-xs font-semibold text-[#0f172a] hover:border-[#ae2424]/40 hover:bg-[#f8fafc] transition-colors shadow-2xs cursor-pointer"
-                  title="Open Sovereign Admin Portal"
-                >
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#ae2424]"></span>
-                  <span>Admin Portal</span>
-                </button>
-
-                <button 
-                  className="p-1.5 text-[#64748b] hover:text-[#0f172a] hover:bg-[#f8fafc] rounded-full transition-colors cursor-pointer"
-                  title="Shurefire Services"
-                >
-                  <Grid className="w-4.5 h-4.5" />
-                </button>
-
-                <button
-                  onClick={() => setShowAdminModal(true)}
-                  className="w-7 h-7 rounded-full bg-[#ae2424] text-white flex items-center justify-center font-bold text-[11px] shadow-xs hover:scale-105 transition-transform cursor-pointer"
-                  title="Ramon Bisola (Project Manager)"
-                >
-                  RB
-                </button>
-              </div>
-
-            </div>
-
-            {/* Filter Navigation Tabs */}
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 flex items-center border-t border-[#e2e8f0] text-xs font-medium gap-6 pt-2 pb-1.5 overflow-x-auto">
-              {[
-                { id: "all", label: "All Results" },
-                { id: "estimates", label: "Structural Estimates & BOQ" },
-                { id: "materials", label: "Materials Catalog" },
-                { id: "suppliers", label: "Verified Depots" }
-              ].map(tab => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveFilterTab(tab.id as any)}
-                  className={`pb-1.5 px-1 border-b-2 transition-all cursor-pointer font-semibold whitespace-nowrap ${
-                    activeFilterTab === tab.id
-                      ? "border-[#ae2424] text-[#ae2424]"
-                      : "border-transparent text-[#64748b] hover:text-[#0f172a]"
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-          </header>
-
-          {/* SERP Body Main Layout */}
-          <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 flex-1 w-full grid grid-cols-1 lg:grid-cols-12 gap-8">
-            
-            {/* Left 8 Columns: AI Overview Hero Box & Google-Style SERP Items */}
-            <div className="lg:col-span-8 space-y-6">
-              
-              {/* Query & Results Status */}
-              <div className="flex items-center justify-between text-xs text-[#64748b] pb-1 border-b border-[#e2e8f0]">
-                <span>
-                  Showing results for <span className="font-semibold text-[#0f172a]">"{activeQuery}"</span>
-                </span>
-                <span className="font-mono">
-                  {displayedMaterials.length} verified material items indexed
-                </span>
-              </div>
-
-              {/* AI OVERVIEW HERO BOX: Top light-blue/slate callout card with subtle #ae2424 left-accent border */}
-              {specCalc && (
-                <section className="bg-[#f8fafc] border border-[#e2e8f0] border-l-4 border-l-[#ae2424] rounded-2xl p-5 sm:p-6 shadow-xs space-y-5 animate-fade-in">
-                  
-                  {/* Top Header Badge */}
-                  <div className="flex items-center justify-between flex-wrap gap-2">
-                    <div className="flex items-center gap-2">
-                      <div className="w-6 h-6 rounded-lg bg-[#ae2424]/10 text-[#ae2424] flex items-center justify-center">
-                        <Sparkles className="w-3.5 h-3.5" />
-                      </div>
-                      <h2 className="text-sm font-bold text-[#0f172a] uppercase tracking-wider">
-                        Gemini AI Overview • Sovereign Market Intelligence
-                      </h2>
-                    </div>
-                    <span className="text-[11px] font-mono text-[#64748b] bg-white px-2.5 py-1 rounded-full border border-[#e2e8f0]">
-                      {specCalc.terrainFactor}
-                    </span>
-                  </div>
-
-                  {/* Summary Narrative */}
-                  <p className="text-sm text-[#0f172a] leading-relaxed">
-                    Based on local Nigerian construction standards for{" "}
-                    <strong className="text-[#ae2424] font-semibold">{activeQuery}</strong>, total estimated structural procurement is calculated at{" "}
-                    <strong className="text-[#0f172a] font-bold">₦{specCalc.estimatedGrandTotal.toLocaleString()}</strong>. Specifications adhere to SON/NIS 117 standards using Dangote 42.5R Grade Cement, high-yield ribbed TMT rebars, and vibrated hollow masonry units.
-                  </p>
-
-                  {/* Budget & Spec Metric Cards */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
-                    <div className="bg-white border border-[#e2e8f0] rounded-xl p-3 shadow-2xs">
-                      <span className="block text-[11px] font-medium text-[#64748b]">Total Estimated Cost</span>
-                      <span className="text-base sm:text-lg font-black text-[#ae2424] font-mono">
-                        ₦{specCalc.estimatedGrandTotal.toLocaleString()}
-                      </span>
-                    </div>
-
-                    <div className="bg-white border border-[#e2e8f0] rounded-xl p-3 shadow-2xs">
-                      <span className="block text-[11px] font-medium text-[#64748b]">Substructure / Raft</span>
-                      <span className="text-base sm:text-lg font-bold text-[#0f172a] font-mono">
-                        ₦{specCalc.substructureSubtotal.toLocaleString()}
-                      </span>
-                    </div>
-
-                    <div className="bg-white border border-[#e2e8f0] rounded-xl p-3 shadow-2xs">
-                      <span className="block text-[11px] font-medium text-[#64748b]">Superstructure</span>
-                      <span className="text-base sm:text-lg font-bold text-[#0f172a] font-mono">
-                        ₦{specCalc.superstructureSubtotal.toLocaleString()}
-                      </span>
-                    </div>
-
-                    <div className="bg-white border border-[#e2e8f0] rounded-xl p-3 shadow-2xs">
-                      <span className="block text-[11px] font-medium text-[#64748b]">Finishing Reserve</span>
-                      <span className="text-base sm:text-lg font-bold text-[#0f172a] font-mono">
-                        ₦{specCalc.finishingSubtotal.toLocaleString()}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Structural Spec Checklist */}
-                  <div className="bg-white rounded-xl border border-[#e2e8f0] p-4 space-y-2">
-                    <span className="text-xs font-bold text-[#0f172a] uppercase tracking-wider block">
-                      Engineering Specification Checklist:
-                    </span>
-                    <ul className="space-y-1.5 text-xs text-[#0f172a]">
-                      {specCalc.structuralNotes.map((note, idx) => (
-                        <li key={idx} className="flex items-start gap-2">
-                          <CheckCircle2 className="w-4 h-4 text-[#ae2424] shrink-0 mt-0.5" />
-                          <span>{note}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-
-                  {/* Actions inside AI Overview */}
-                  <div className="flex flex-wrap items-center gap-3 pt-1">
-                    <button
-                      onClick={() => {
-                        setProcureItem(null);
-                        setShowProcureModal(true);
-                      }}
-                      className="px-4 py-2 rounded-xl bg-[#ae2424] hover:bg-[#8f1d1d] text-white font-bold text-xs uppercase tracking-wider transition-colors cursor-pointer shadow-xs flex items-center gap-2"
-                    >
-                      <Briefcase className="w-3.5 h-3.5" />
-                      Procure This Bill of Quantities
-                    </button>
-
-                    <button
-                      onClick={handleCopyQuote}
-                      className="px-4 py-2 rounded-xl bg-white hover:bg-slate-50 border border-[#e2e8f0] text-xs font-semibold text-[#0f172a] transition-colors cursor-pointer flex items-center gap-1.5"
-                    >
-                      {copiedQuote ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <FileText className="w-3.5 h-3.5 text-[#64748b]" />}
-                      {copiedQuote ? "Copied Spec to Clipboard!" : "Copy Bill of Quantities"}
-                    </button>
-                  </div>
-
-                </section>
-              )}
-
-              {/* GOOGLE-STYLE SERP ITEMS */}
-              <div className="space-y-6 pt-2">
-                {displayedMaterials.map((item) => {
-                  const isExpanded = expandedItemId === item.id;
-                  const itemUrl = `https://shurefire.ng/materials/${item.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
-
-                  return (
-                    <article
-                      key={item.id}
-                      className="border-b border-[#e2e8f0] pb-6 last:border-b-0 space-y-1.5"
-                    >
-                      {/* Source URL snippet in small monospace text (#64748b) */}
-                      <div className="flex items-center gap-2 font-mono text-[12px] text-[#64748b] tracking-tight">
-                        <span className="w-4 h-4 rounded bg-[#ae2424]/10 text-[#ae2424] flex items-center justify-center font-bold text-[9px]">
-                          SF
-                        </span>
-                        <span className="truncate">{itemUrl}</span>
-                        {item.isLiveStockSynced && (
-                          <span className="text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded font-sans font-semibold">
-                            Verified Stock
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Title in bold blue/slate (text-[#1a0dab] hover:underline cursor-pointer) */}
-                      <h3
-                        onClick={() => setExpandedItemId(isExpanded ? null : item.id)}
-                        className="text-lg sm:text-xl font-semibold text-[#1a0dab] hover:underline cursor-pointer leading-snug flex items-center justify-between gap-2"
-                      >
-                        <span>{item.name}</span>
-                        <button
-                          type="button"
-                          className="text-[#64748b] hover:text-[#0f172a] p-1 rounded-md text-xs font-normal"
-                        >
-                          {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                        </button>
-                      </h3>
-
-                      {/* Description preview text */}
-                      <p className="text-sm text-[#0f172a] leading-relaxed line-clamp-2">
-                        {item.specifications}. Sourced directly from {item.supplierName} ({item.supplierCity}). Available for immediate dispatch across Lagos, Ogun, and regional construction sites.
-                      </p>
-
-                      {/* Click-to-Expand Details Viewer */}
-                      {isExpanded && (
-                        <div className="mt-3 p-4 bg-[#f8fafc] border border-[#e2e8f0] rounded-xl space-y-3 animate-fade-in text-xs">
-                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                            <div className="bg-white p-2.5 rounded-lg border border-[#e2e8f0]">
-                              <span className="text-[10px] uppercase font-bold text-[#64748b] block">Price per Unit</span>
-                              <span className="text-sm font-black text-[#ae2424] font-mono">
-                                ₦{item.price.toLocaleString()} / {item.unit}
-                              </span>
-                            </div>
-
-                            <div className="bg-white p-2.5 rounded-lg border border-[#e2e8f0]">
-                              <span className="text-[10px] uppercase font-bold text-[#64748b] block">Depot Location</span>
-                              <span className="text-xs font-semibold text-[#0f172a] truncate block">
-                                {item.supplierCity}, {item.supplierState}
-                              </span>
-                            </div>
-
-                            <div className="bg-white p-2.5 rounded-lg border border-[#e2e8f0]">
-                              <span className="text-[10px] uppercase font-bold text-[#64748b] block">Stock Synced</span>
-                              <span className="text-xs font-semibold text-emerald-700 block">
-                                {item.stockLevel.toLocaleString()} {item.unit}s
-                              </span>
-                            </div>
-
-                            <div className="bg-white p-2.5 rounded-lg border border-[#e2e8f0]">
-                              <span className="text-[10px] uppercase font-bold text-[#64748b] block">Standard Compliance</span>
-                              <span className="text-xs font-semibold text-[#0f172a] block">
-                                NIS / SON Certified
-                              </span>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center justify-between pt-1 flex-wrap gap-2">
-                            <div className="text-[11px] text-[#64748b]">
-                              Supplier ID: <span className="font-mono text-[#0f172a]">{item.supplierId}</span> • Updated Today
-                            </div>
-
-                            <button
-                              onClick={() => {
-                                setProcureItem(item);
-                                setShowProcureModal(true);
-                              }}
-                              className="px-3.5 py-1.5 rounded-lg bg-[#ae2424] hover:bg-[#8f1d1d] text-white font-bold text-xs uppercase tracking-wider transition-colors cursor-pointer shadow-2xs"
-                            >
-                              Procure This Material
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </article>
-                  );
-                })}
-              </div>
-
-            </div>
-
-            {/* Right 4 Columns: Sovereign Market Intelligence Sidebar */}
-            <aside className="lg:col-span-4 space-y-5">
-              
-              {/* Market Pricing Desk Card */}
-              <div className="bg-[#f8fafc] border border-[#e2e8f0] rounded-2xl p-5 space-y-4">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-bold text-[#0f172a] uppercase tracking-wider flex items-center gap-1.5">
-                    <TrendingUp className="w-4 h-4 text-[#ae2424]" />
-                    Sovereign Market Rates
-                  </h4>
-                  <span className="text-[10px] font-mono text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded font-semibold">
-                    Live Lagos
-                  </span>
-                </div>
-
-                <div className="space-y-2.5 text-xs">
-                  <div className="flex items-center justify-between pb-2 border-b border-[#e2e8f0]">
-                    <span className="text-[#0f172a]">Dangote Cement 50kg (42.5R)</span>
-                    <span className="font-bold text-[#ae2424] font-mono">₦7,850</span>
-                  </div>
-                  <div className="flex items-center justify-between pb-2 border-b border-[#e2e8f0]">
-                    <span className="text-[#0f172a]">16mm TMT High-Yield Rebar</span>
-                    <span className="font-bold text-[#ae2424] font-mono">₦13,500</span>
-                  </div>
-                  <div className="flex items-center justify-between pb-2 border-b border-[#e2e8f0]">
-                    <span className="text-[#0f172a]">12mm High-Tension Rebar</span>
-                    <span className="font-bold text-[#ae2424] font-mono">₦8,300</span>
-                  </div>
-                  <div className="flex items-center justify-between pb-2 border-b border-[#e2e8f0]">
-                    <span className="text-[#0f172a]">9-inch Vibrated Hollow Block</span>
-                    <span className="font-bold text-[#ae2424] font-mono">₦780</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-[#0f172a]">Sharp Sand (20t Tipper)</span>
-                    <span className="font-bold text-[#ae2424] font-mono">₦135,000</span>
-                  </div>
-                </div>
-
-                <button
-                  onClick={() => {
-                    setProcureItem(null);
-                    setShowProcureModal(true);
-                  }}
-                  className="w-full py-2 bg-white hover:bg-slate-50 border border-[#e2e8f0] text-xs font-semibold text-[#ae2424] rounded-xl transition-colors cursor-pointer shadow-2xs"
-                >
-                  Request Custom Sourcing Quote
-                </button>
-              </div>
-
-              {/* Verified Depot Network */}
-              <div className="bg-white border border-[#e2e8f0] rounded-2xl p-5 space-y-3">
-                <h4 className="text-xs font-bold text-[#0f172a] uppercase tracking-wider flex items-center gap-1.5">
-                  <Building2 className="w-4 h-4 text-[#ae2424]" />
-                  Verified Supply Hubs
-                </h4>
-                <div className="space-y-2 text-xs text-[#0f172a]">
-                  {NIGERIAN_SUPPLIERS.slice(0, 3).map(sup => (
-                    <div key={sup.id} className="p-2.5 rounded-xl bg-[#f8fafc] border border-[#e2e8f0] space-y-0.5">
-                      <div className="font-semibold text-[#0f172a]">{sup.name}</div>
-                      <div className="text-[11px] text-[#64748b]">{sup.marketName}</div>
-                      <div className="text-[10px] text-emerald-700 font-medium">Rating: {sup.rating} ★ • Direct Dispatch</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-            </aside>
-
-          </main>
-
-          {/* Compact SERP Footer */}
-          <footer className="w-full bg-[#f8fafc] border-t border-[#e2e8f0] py-4 text-center text-xs text-[#64748b] select-none">
-            <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
-              <span>Calculations powered by Gemini AI. Real-time pricing sourced from Shurefire Sovereign Marketplace.</span>
-              <button
-                onClick={handleResetToLanding}
-                className="hover:underline text-[#ae2424] font-medium cursor-pointer"
-              >
-                Back to Search Home
-              </button>
-            </div>
-          </footer>
-
-        </div>
+        <SearchResultsPage
+          initialQuery={activeQuery || query}
+          onQueryChange={(newQ) => {
+            setQuery(newQ);
+            setActiveQuery(newQ);
+          }}
+          onNavigateHome={handleResetToLanding}
+          onOpenAdmin={() => setShowAdminModal(true)}
+          onProcureMaterial={(mat) => {
+            setProcureItem(mat);
+            setShowProcureModal(true);
+          }}
+        />
       )}
 
       {/* ========================================================================= */}
@@ -1083,143 +721,39 @@ Source: Shurefire Sovereign Construction Search (https://shurefire.ng)`;
               />
             </div>
           ) : (
-            <div className="bg-white rounded-3xl border border-[#e2e8f0] max-w-2xl w-full shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
-              
-              {/* Modal Header */}
-              <div className="p-5 border-b border-[#e2e8f0] flex items-center justify-between bg-[#f8fafc]">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-xl bg-[#ae2424] text-white font-mono font-black text-xs flex items-center justify-center">
-                    SFS
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-bold text-[#0f172a]">
-                      Shurefire Sovereign Index Console
-                    </h3>
-                    <p className="text-[11px] text-[#64748b] font-mono">
-                      Trade Desk Logistics & Knowledge Base
-                    </p>
-                  </div>
-                </div>
+            <div className="bg-white rounded-3xl border border-[#e2e8f0] max-w-6xl w-full h-[90vh] shadow-2xl flex flex-col overflow-hidden relative">
+              <div className="absolute top-3.5 right-4 z-40 flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    window.history.pushState({}, "", "/admin/dashboard");
+                    setCurrentPath("/admin/dashboard");
+                    setShowAdminModal(false);
+                  }}
+                  className="text-xs font-semibold text-slate-600 hover:text-[#ae2424] px-2.5 py-1.5 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer flex items-center gap-1 bg-white/90 border border-slate-200"
+                >
+                  <span>Full Screen</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </button>
                 <button
                   onClick={() => setShowAdminModal(false)}
-                  className="p-1.5 rounded-full text-[#64748b] hover:text-[#0f172a] hover:bg-slate-200 transition-colors cursor-pointer"
+                  className="p-1.5 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer bg-white/90 border border-slate-200"
+                  title="Close"
+                  aria-label="Close"
                 >
                   <X className="w-4 h-4" />
                 </button>
               </div>
-
-              {/* Modal Body */}
-              <div className="p-6 overflow-y-auto space-y-5 flex-1">
-                <div className="space-y-4 text-xs">
-                  <div className="flex items-center justify-between p-3 rounded-xl bg-[#f8fafc] border border-[#e2e8f0]">
-                    <span className="flex items-center gap-2 font-mono text-emerald-700">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                      Verified: {adminEmail}
-                    </span>
-                    <button
-                      onClick={() => setIsAdminLoggedIn(false)}
-                      className="text-xs text-[#ae2424] hover:underline cursor-pointer font-semibold"
-                    >
-                      Sign Out
-                    </button>
-                  </div>
-
-                  <div className="flex border-b border-[#e2e8f0] text-xs font-semibold gap-4">
-                    <button
-                      onClick={() => setAdminTab("leads")}
-                      className={`pb-2 border-b-2 cursor-pointer transition-colors ${
-                        adminTab === "leads" ? "border-[#ae2424] text-[#ae2424]" : "border-transparent text-[#64748b]"
-                      }`}
-                    >
-                      Procurement Leads ({leadsList.length})
-                    </button>
-                    <button
-                      onClick={() => setAdminTab("knowledge")}
-                      className={`pb-2 border-b-2 cursor-pointer transition-colors ${
-                        adminTab === "knowledge" ? "border-[#ae2424] text-[#ae2424]" : "border-transparent text-[#64748b]"
-                      }`}
-                    >
-                      Knowledge Documents ({knowledgeList.length})
-                    </button>
-                  </div>
-
-                  {adminTab === "leads" ? (
-                    <div className="space-y-2.5 max-h-72 overflow-y-auto">
-                      {leadsList.length === 0 ? (
-                        <p className="text-center text-[#64748b] py-6">No inbound procurement leads recorded yet.</p>
-                      ) : (
-                        leadsList.map((lead, idx) => (
-                          <div key={lead.id || idx} className="p-3 rounded-xl bg-[#f8fafc] border border-[#e2e8f0] space-y-1">
-                            <div className="flex justify-between font-bold text-[#0f172a]">
-                              <span>{lead.buyer_name || lead.name || "Contractor"}</span>
-                              <span className="text-emerald-700 font-mono">
-                                ₦{Number(lead.estimated_total || 0).toLocaleString()}
-                              </span>
-                            </div>
-                            <div className="text-[#64748b]">
-                              {lead.phone || lead.email} • {lead.project_location || "Lagos"}
-                            </div>
-                            <div className="text-[11px] text-[#0f172a] font-medium">
-                              Scope: {lead.query || lead.material || "General Project"}
-                            </div>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      <div className="p-3.5 rounded-xl bg-[#f8fafc] border border-[#e2e8f0] space-y-2">
-                        <span className="font-bold text-[#0f172a] block">Publish Knowledge Briefing</span>
-                        <input
-                          type="text"
-                          value={newKbTitle}
-                          onChange={(e) => setNewKbTitle(e.target.value)}
-                          placeholder="Document title (e.g. Dangote Bulk Price Q3)"
-                          className="w-full bg-white border border-[#e2e8f0] rounded-lg p-2 text-xs text-[#0f172a]"
-                        />
-                        <textarea
-                          rows={3}
-                          value={newKbContent}
-                          onChange={(e) => setNewKbContent(e.target.value)}
-                          placeholder="Engineering notes, pricing bulletins..."
-                          className="w-full bg-white border border-[#e2e8f0] rounded-lg p-2 text-xs text-[#0f172a]"
-                        />
-                        <button
-                          type="button"
-                          disabled={isSavingKb}
-                          onClick={async () => {
-                            if (!newKbTitle.trim()) return;
-                            setIsSavingKb(true);
-                            try {
-                              await fetch("/api/admin/knowledge", {
-                                method: "POST",
-                                headers: { "Content-Type": "application/json" },
-                                body: JSON.stringify({ title: newKbTitle, content: newKbContent })
-                              });
-                              setNewKbTitle("");
-                              setNewKbContent("");
-                              fetchAdminData();
-                            } finally {
-                              setIsSavingKb(false);
-                            }
-                          }}
-                          className="w-full py-1.5 rounded-lg bg-[#ae2424] hover:bg-[#8f1d1d] text-white font-bold text-xs uppercase cursor-pointer"
-                        >
-                          {isSavingKb ? "Publishing..." : "Save Knowledge Document"}
-                        </button>
-                      </div>
-
-                      <div className="space-y-2 max-h-48 overflow-y-auto">
-                        {knowledgeList.map((kb) => (
-                          <div key={kb.id} className="p-2.5 rounded-lg bg-[#f8fafc] border border-[#e2e8f0]">
-                            <div className="font-semibold text-[#0f172a]">{kb.title}</div>
-                            <div className="text-[11px] text-[#64748b] line-clamp-2">{kb.content}</div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
+              <div className="flex-1 overflow-hidden flex flex-col">
+                <AdminDashboard
+                  userEmail={adminEmail}
+                  onSignOut={() => {
+                    setIsAdminLoggedIn(false);
+                    const client = (typeof window !== "undefined" && window.dbClient) || getSupabase();
+                    client?.auth?.signOut?.();
+                    setShowAdminModal(false);
+                  }}
+                  onNavigateHome={() => setShowAdminModal(false)}
+                />
               </div>
             </div>
           )}
