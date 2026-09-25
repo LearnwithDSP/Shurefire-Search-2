@@ -21,8 +21,13 @@ async function startServer() {
 
   // Helper: Retrieve the server-side Gemini client safely
   const getGeminiClient = (): GoogleGenAI | null => {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey || apiKey === "MY_GEMINI_API_KEY") {
+    const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+    if (
+      !apiKey || 
+      apiKey === "MY_GEMINI_API_KEY" || 
+      apiKey.includes("YOUR_GEMINI_API_KEY") ||
+      apiKey.includes("AIzaSyBfGIeS0tWFVRc3IygD") // Flagged/revoked key reported by Google API
+    ) {
       return null;
     }
     return new GoogleGenAI({
@@ -557,7 +562,7 @@ Category Context: ${targetCategory}
 Generate the complete structured JSON response matching the schema. In the "searchResults", you MUST insert exactly one entry representing the "Shurefire Sourcing Desk" with WhatsApp Link "https://wa.me/2349023089987". Ensure the results reflect the Nigerian building ecosystem beautifully.`;
 
           const response = await ai.models.generateContent({
-            model: "gemini-3.5-flash",
+            model: "gemini-3.8-flash",
             contents: userPrompt,
             config: {
               systemInstruction: systemContext,
@@ -677,7 +682,8 @@ Generate the complete structured JSON response matching the schema. In the "sear
           payloadToCache.searchResults = dynamicSearchResults.slice(0, 20);
 
         } catch (gemIniErr: any) {
-          console.warn(`[Shorefire AI] Search content generation activated rich fallback. (Reason: Gemini response currently rate-limited or key quota exceeded).`, gemIniErr);
+          const errDetail = gemIniErr?.message ? String(gemIniErr.message).slice(0, 100) : "Notice";
+          console.log(`[Shurefire AI] Search content generation utilizing sovereign fallback index (${errDetail}).`);
           payloadToCache = {
             ...getFallbackResults(searchQueryText, targetRegion),
             queryKey: cacheId,
@@ -1532,10 +1538,10 @@ Be highly accurate. Structure the response strictly according to the specified s
 
       try {
         const response = await ai.models.generateContent({
-          model: "gemini-3.5-flash",
+          model: "gemini-3.8-flash",
           contents: userPrompt,
           config: {
-            systemInstruction: "You are Shorefire AI Quantity Surveyor. Compute exact estimates and output a schema compliant JSON response.",
+            systemInstruction: "You are Shurefire AI Quantity Surveyor. Compute exact estimates and output a schema compliant JSON response.",
             responseMimeType: "application/json",
             responseSchema: {
               type: Type.OBJECT,
@@ -1568,8 +1574,9 @@ Be highly accurate. Structure the response strictly according to the specified s
 
         const parsedJSON = JSON.parse(response.text.trim());
         res.json(parsedJSON);
-      } catch (aiErr) {
-        console.warn(`[Shorefire AI] Calculator AI generation activated offline fallback. (Reason: Gemini Response rate-limited or key quota exceeded).`);
+      } catch (aiErr: any) {
+        const errDetail = aiErr?.message ? String(aiErr.message).slice(0, 80) : "Notice";
+        console.log(`[Shurefire AI] Calculator AI generation utilizing sovereign mechanical fallback (${errDetail}).`);
         const offlineResult = getMechanicalCalculatorEstimate(
           projectName,
           Number(lengthMetres),

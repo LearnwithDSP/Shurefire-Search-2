@@ -6,24 +6,18 @@
   --font-display: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
   --font-mono: "JetBrains Mono", monospace;
   
-  --color-brand-primary: #B91C1C; /* Premium Deep Construction Red */
-  --color-brand-accent: #991B1B; /* Rich dark burgundy */
-  --color-brand-charcoal: #111111; /* Sleek graphite dark text */
-  --color-brand-muted: #6B7280; /* Sleek neutral gray */
+  --color-brand-primary: #ae2424; /* Shurefire Crimson */
+  --color-brand-accent: #8b1c1c; /* Deep Crimson */
+  --color-brand-dark: #0f172a; /* Primary dark slate body text */
+  --color-brand-muted: #64748b; /* Secondary subtitle gray */
+  --color-brand-border: #e2e8f0; /* Borders & dividers */
 }
 
-/* World-class premium light-themed dashboard background */
+/* Light-mode search engine clean background */
 body {
   font-family: var(--font-sans);
-  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
-  background-color: #F6F7F8;
-  /* Premium structural blueprint pattern: ultra subtle 1% opacity dot grid */
-  background-image: 
-    radial-gradient(rgba(185, 28, 28, 0.02) 1.5px, transparent 1.5px),
-    radial-gradient(rgba(17, 17, 17, 0.015) 1px, transparent 1px);
-  background-size: 32px 32px, 16px 16px;
-  background-position: 0 0, 8px 8px;
-  color: #111111;
+  background-color: #ffffff;
+  color: #0f172a;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }

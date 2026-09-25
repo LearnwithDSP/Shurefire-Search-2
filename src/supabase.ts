@@ -30,6 +30,9 @@ export function isSupabaseConfigured(): boolean {
 export function getSupabase(customUrl?: string, customKey?: string): SupabaseClient {
   if (customUrl && customKey) {
     supabaseInstance = createClient(customUrl, customKey);
+    if (typeof window !== "undefined") {
+      window.dbClient = supabaseInstance;
+    }
     return supabaseInstance;
   }
 
@@ -48,5 +51,24 @@ export function getSupabase(customUrl?: string, customKey?: string): SupabaseCli
 
     supabaseInstance = createClient(url.trim(), key.trim());
   }
+  
+  if (typeof window !== "undefined") {
+    window.dbClient = supabaseInstance;
+  }
+
   return supabaseInstance;
+}
+
+declare global {
+  interface Window {
+    dbClient?: SupabaseClient;
+    SUPABASE_URL?: string;
+    SUPABASE_ANON_KEY?: string;
+    VITE_SUPABASE_URL?: string;
+    VITE_SUPABASE_ANON_KEY?: string;
+  }
+}
+
+if (typeof window !== "undefined") {
+  window.dbClient = getSupabase();
 }
