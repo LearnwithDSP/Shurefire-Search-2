@@ -13,7 +13,6 @@ import {
   Copy,
   AlertCircle,
   FileText,
-  ShieldCheck,
   Database
 } from "lucide-react";
 import { getSupabase } from "../supabase";
@@ -435,7 +434,6 @@ export const SearchResultsPage: React.FC<SearchResultsPageProps> = ({
       {/* 2. BODY CONTENT (Zero-Demo Initial State vs SERP Results)                  */}
       {/* ========================================================================= */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 flex-1 w-full">
-        
         {/* Rule 1: ZERO-DEMO INITIAL STATE                                          */}
         {/* When the user hasn't performed a search, DO NOT display mock or demo cards*/}
         {!hasSearched ? (
@@ -451,10 +449,10 @@ export const SearchResultsPage: React.FC<SearchResultsPageProps> = ({
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+          <div className="max-w-4xl space-y-6">
             
-            {/* Left 8 Columns: AI Direct Answer Box & Refined Search Result Cards */}
-            <main className="lg:col-span-8 space-y-6">
+            {/* AI Direct Answer Box & Refined Search Result Cards */}
+            <main className="space-y-6">
               
               {/* Search Statistics Bar */}
               <div className="flex items-center justify-between text-xs text-slate-500 pb-2 border-b border-[#e2e8f0]">
@@ -634,38 +632,6 @@ export const SearchResultsPage: React.FC<SearchResultsPageProps> = ({
               )}
 
             </main>
-
-            {/* Right 4 Columns: Sovereign Guidelines Sidebar */}
-            <aside className="lg:col-span-4 space-y-5">
-              <div className="bg-slate-50/70 border border-[#e2e8f0] rounded-2xl p-5 space-y-4 shadow-2xs">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-bold text-[#1e293b] uppercase tracking-wider flex items-center gap-1.5">
-                    <ShieldCheck className="w-4 h-4 text-[#ae2424]" />
-                    Engine Architecture
-                  </h4>
-                  <span className="text-[10px] font-mono text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded font-semibold border border-emerald-200">
-                    Production
-                  </span>
-                </div>
-
-                <div className="space-y-2.5 text-xs text-slate-600 leading-relaxed">
-                  <div className="p-2.5 rounded-xl bg-white border border-[#e2e8f0]">
-                    <span className="font-bold text-[#1e293b] block mb-0.5">Zero-Demo Pipeline</span>
-                    <span>No hardcoded mock results are ever shown; searches run live against Supabase and Gemini 1.5 Flash.</span>
-                  </div>
-
-                  <div className="p-2.5 rounded-xl bg-white border border-[#e2e8f0]">
-                    <span className="font-bold text-[#1e293b] block mb-0.5">Context Refinement</span>
-                    <span>Raw scraped database entries are expanded into full, structured industry reports with zero raw text exposure.</span>
-                  </div>
-
-                  <div className="p-2.5 rounded-xl bg-white border border-[#e2e8f0]">
-                    <span className="font-bold text-[#1e293b] block mb-0.5">Deep Intelligence Drawer</span>
-                    <span>Clicking any result expands a slide-over report covering Executive Overview, Specs, Pricing, and Quality.</span>
-                  </div>
-                </div>
-              </div>
-            </aside>
 
           </div>
         )}

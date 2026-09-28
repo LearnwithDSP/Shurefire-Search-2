@@ -19,6 +19,25 @@ async function startServer() {
 
   app.use(express.json());
 
+  // Enable CORS for client-server requests and preflight OPTIONS handling
+  app.use((req, res, next) => {
+    res.header("Access-Control-Allow-Origin", "*");
+    res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+    res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
+    if (req.method === "OPTIONS") {
+      return res.sendStatus(200);
+    }
+    next();
+  });
+
+  // Resilient timeout helper to prevent hanging external queries
+  const withTimeout = <T>(promiseLike: PromiseLike<T>, ms = 1500): Promise<T> => {
+    return Promise.race([
+      Promise.resolve(promiseLike),
+      new Promise<T>((_, reject) => setTimeout(() => reject(new Error("Database request timed out")), ms))
+    ]);
+  };
+
   // Helper: Retrieve the server-side Gemini client safely
   const getGeminiClient = (): GoogleGenAI | null => {
     const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
@@ -240,9 +259,12 @@ async function startServer() {
         let allKbBlocks: any[] = [];
         try {
           const supabase = getSupabase();
-          const { data: kbData, error: kbError } = await supabase
-            .from("knowledge_base")
-            .select("*");
+          const resData: any = await withTimeout(
+            supabase.from("knowledge_base").select("*"),
+            1500
+          );
+          const kbData = resData?.data;
+          const kbError = resData?.error;
           if (kbData && kbData.length > 0 && !kbError) {
             allKbBlocks = kbData.map((b: any) => ({
               id: b.id,
@@ -251,7 +273,7 @@ async function startServer() {
             }));
           }
         } catch (err) {
-          console.log("[Shurefire Knowledge Base] Supabase fetch failed in server, trying Firestore...");
+          console.log("[Shurefire Knowledge Base] Supabase fetch timed out or failed in server, trying Firestore...");
         }
 
         if (allKbBlocks.length === 0) {
@@ -812,13 +834,6 @@ Generate the complete structured JSON response matching the schema. In the "sear
     "Price of 16mm TMT iron rods today in Lagos"
   ];
 
-  const withTimeout = <T>(promiseLike: PromiseLike<T>, ms = 1200): Promise<T> => {
-    return Promise.race([
-      Promise.resolve(promiseLike),
-      new Promise<T>((_, reject) => setTimeout(() => reject(new Error("Supabase request timed out")), ms))
-    ]);
-  };
-
   // API Endpoint: Recent searches management (Saved live to Supabase, no local storage)
   app.get("/api/recent-searches", async (req, res) => {
     try {
@@ -1284,10 +1299,15 @@ Generate the complete structured JSON response matching the schema. In the "sear
       // Fetch from Supabase
       try {
         const supabase = getSupabase();
-        const { data, error } = await supabase
-          .from("leads")
-          .select("*")
-          .order("created_at", { ascending: false });
+        const resData: any = await withTimeout(
+          supabase
+            .from("leads")
+            .select("*")
+            .order("created_at", { ascending: false }),
+          1500
+        );
+        const data = resData?.data;
+        const error = resData?.error;
         if (data && !error) {
           leadsList = data.map((l: any) => ({
             id: l.id,
@@ -1304,24 +1324,26 @@ Generate the complete structured JSON response matching the schema. In the "sear
           }));
         }
       } catch (err) {
-        console.log("[Shurefire Supabase] Fetch leads table skipped.");
+        console.log("[Shurefire Supabase] Fetch leads table skipped or timed out.");
       }
 
       // Fallback/sync to Firestore leads
       if (leadsList.length === 0) {
         try {
           const { getDocs, collection, query: fsQuery, orderBy } = await import("firebase/firestore");
-          const snap = await getDocs(fsQuery(collection(db, "leads"), orderBy("createdAt", "desc")));
-          leadsList = snap.docs.map(doc => doc.data());
+          const snap: any = await withTimeout(getDocs(fsQuery(collection(db, "leads"), orderBy("createdAt", "desc"))), 1500);
+          if (snap?.docs) {
+            leadsList = snap.docs.map((doc: any) => doc.data());
+          }
         } catch (err) {
-          console.error("[Shurefire Firestore] Fetch leads collection failed:", err);
+          console.log("[Shurefire Firestore] Fetch leads collection skipped or timed out.");
         }
       }
 
       res.json(leadsList);
     } catch (err) {
-      console.error(err);
-      res.status(500).json({ error: "Failed to fetch leads" });
+      console.warn("Notice in /api/admin/leads:", err);
+      res.json([]);
     }
   });
 
@@ -1853,9 +1875,12 @@ Return a valid JSON object matching this schema strictly:
       // Fetch from Supabase
       try {
         const supabase = getSupabase();
-        const { data, error } = await supabase
-          .from("knowledge_base")
-          .select("*");
+        const resData: any = await withTimeout(
+          supabase.from("knowledge_base").select("*"),
+          1500
+        );
+        const data = resData?.data;
+        const error = resData?.error;
         if (data && !error && data.length > 0) {
           kbList = data.map((b: any) => ({
             id: b.id,
@@ -1873,33 +1898,35 @@ Return a valid JSON object matching this schema strictly:
           kbList.sort((a, b) => new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime());
         }
       } catch (err) {
-        console.log("[Shurefire Supabase] Fetch knowledge table skipped.");
+        console.log("[Shurefire Supabase] Fetch knowledge table skipped or timed out.");
       }
 
       // Fallback/sync to Firestore knowledge base
       if (kbList.length === 0) {
         try {
           const { getDocs, collection, query: fsQuery } = await import("firebase/firestore");
-          const snap = await getDocs(fsQuery(collection(db, "knowledge_base")));
-          kbList = snap.docs.map(doc => {
-            const d = doc.data();
-            return {
-              id: d.id || doc.id,
-              title: d.title || "Trade Briefing",
-              content_text: d.content_text || d.content || "",
-              content: d.content_text || d.content || "",
-              url: d.url || "",
-              material_category: d.material_category || d.category || "Cement",
-              has_embedding: Boolean(d.embeddingLength || d.embedding),
-              embedding_dim: d.embeddingLength || 768,
-              updatedAt: d.updatedAt || d.updated_at || d.createdAt,
-              createdAt: d.createdAt || d.updated_at
-            };
-          });
-          // Sort descending
-          kbList.sort((a, b) => new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime());
+          const snap: any = await withTimeout(getDocs(fsQuery(collection(db, "knowledge_base"))), 1500);
+          if (snap?.docs) {
+            kbList = snap.docs.map((doc: any) => {
+              const d = doc.data();
+              return {
+                id: d.id || doc.id,
+                title: d.title || "Trade Briefing",
+                content_text: d.content_text || d.content || "",
+                content: d.content_text || d.content || "",
+                url: d.url || "",
+                material_category: d.material_category || d.category || "Cement",
+                has_embedding: Boolean(d.embeddingLength || d.embedding),
+                embedding_dim: d.embeddingLength || 768,
+                updatedAt: d.updatedAt || d.updated_at || d.createdAt,
+                createdAt: d.createdAt || d.updated_at
+              };
+            });
+            // Sort descending
+            kbList.sort((a, b) => new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime());
+          }
         } catch (err) {
-          console.error("[Shurefire Firestore] Fetch knowledge collection failed:", err);
+          console.log("[Shurefire Firestore] Fetch knowledge collection skipped or timed out.");
         }
       }
 

@@ -120,19 +120,58 @@ export default function App() {
 
   // Fetch admin data when logged in
   const fetchAdminData = useCallback(async () => {
+    // 1. Leads fetch with resilient direct Supabase fallback
     try {
       const leadsRes = await fetch("/api/admin/leads");
       if (leadsRes.ok) {
         const leadsData = await leadsRes.json();
-        setLeadsList(leadsData);
+        if (Array.isArray(leadsData)) {
+          setLeadsList(leadsData);
+        }
+      } else {
+        const client = (typeof window !== "undefined" && window.dbClient) || getSupabase();
+        const { data } = await client.from("leads").select("*").order("created_at", { ascending: false });
+        if (data && Array.isArray(data)) {
+          setLeadsList(data);
+        }
       }
+    } catch {
+      try {
+        const client = (typeof window !== "undefined" && window.dbClient) || getSupabase();
+        const { data } = await client.from("leads").select("*").order("created_at", { ascending: false });
+        if (data && Array.isArray(data)) {
+          setLeadsList(data);
+        }
+      } catch {
+        // Graceful fallback to retain current state
+      }
+    }
+
+    // 2. Knowledge fetch with resilient direct Supabase fallback
+    try {
       const kbRes = await fetch("/api/admin/knowledge");
       if (kbRes.ok) {
         const kbData = await kbRes.json();
-        setKnowledgeList(kbData);
+        if (Array.isArray(kbData)) {
+          setKnowledgeList(kbData);
+        }
+      } else {
+        const client = (typeof window !== "undefined" && window.dbClient) || getSupabase();
+        const { data } = await client.from("knowledge_base").select("*");
+        if (data && Array.isArray(data)) {
+          setKnowledgeList(data);
+        }
       }
-    } catch (err) {
-      console.error("Admin data fetch note:", err);
+    } catch {
+      try {
+        const client = (typeof window !== "undefined" && window.dbClient) || getSupabase();
+        const { data } = await client.from("knowledge_base").select("*");
+        if (data && Array.isArray(data)) {
+          setKnowledgeList(data);
+        }
+      } catch {
+        // Graceful fallback to retain current state
+      }
     }
   }, []);
 
