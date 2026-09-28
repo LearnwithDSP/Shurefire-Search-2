@@ -1495,9 +1495,44 @@ Return a valid JSON object matching this schema strictly:
         return;
       }
 
-      let cleanUrl = url.trim();
-      if (!/^https?:\/\//i.test(cleanUrl)) {
+      // URL Validator & Sanitizer before initiating fetch request to Jina bridge
+      let cleanUrl = url.trim().replace(/^['"<\s]+|['">\s]+$/g, "");
+      if (!cleanUrl) {
+        res.status(400).json({ error: "URL cannot be empty." });
+        return;
+      }
+
+      if (/^(javascript|data|vbscript|file|about):/i.test(cleanUrl)) {
+        res.status(400).json({ error: "Disallowed protocol. Only HTTP and HTTPS URLs are permitted." });
+        return;
+      }
+
+      if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//i.test(cleanUrl)) {
         cleanUrl = `https://${cleanUrl}`;
+      }
+
+      let parsedUrl: URL;
+      try {
+        parsedUrl = new URL(cleanUrl);
+        if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+          res.status(400).json({ error: "Only HTTP and HTTPS URLs are supported." });
+          return;
+        }
+        const hostname = parsedUrl.hostname;
+        if (!hostname || hostname.length < 3) {
+          res.status(400).json({ error: "Domain or hostname is missing or invalid." });
+          return;
+        }
+        const isLocalhost = hostname === "localhost" || hostname === "127.0.0.1";
+        const hasValidDomain = /^([a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/.test(hostname);
+        if (!isLocalhost && !hasValidDomain) {
+          res.status(400).json({ error: "Please enter a valid, well-formed web domain (e.g. https://example.com/spec)." });
+          return;
+        }
+        cleanUrl = parsedUrl.href;
+      } catch {
+        res.status(400).json({ error: "Malformed URL syntax. Please provide a valid web URL." });
+        return;
       }
 
       const category = material_category || "Cement";
@@ -1524,16 +1559,24 @@ Return a valid JSON object matching this schema strictly:
         clearTimeout(timeout);
 
         if (jinaResponse.ok) {
-          const contentType = jinaResponse.headers.get("content-type") || "";
-          if (contentType.includes("application/json")) {
-            const jinaData = await jinaResponse.json();
-            extractedTitle = extractedTitle || jinaData.data?.title || jinaData.title || "";
-            extractedContent = jinaData.data?.content || jinaData.content || "";
-          } else {
-            extractedContent = await jinaResponse.text();
+          const rawText = await jinaResponse.text();
+          if (rawText && rawText.trim().length > 0) {
+            try {
+              const jinaData = JSON.parse(rawText);
+              if (jinaData && typeof jinaData === "object") {
+                extractedTitle = extractedTitle || jinaData.data?.title || jinaData.title || "";
+                extractedContent = jinaData.data?.content || jinaData.content || "";
+              }
+            } catch {
+              // Response text is markdown/plain text or unparsed message - safely handle without JSON error
+            }
+
+            if (!extractedContent) {
+              extractedContent = rawText;
+            }
           }
         } else {
-          throw new Error(`Jina Reader status: ${jinaResponse.status}`);
+          console.warn(`[Shurefire Jina Reader] Jina status non-200: ${jinaResponse.status}`);
         }
       } catch (jinaErr: any) {
         console.warn("[Shurefire Jina Reader] Jina scrape error, falling back to direct parse:", jinaErr?.message || jinaErr);

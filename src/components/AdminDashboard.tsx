@@ -27,6 +27,19 @@ import {
   Link as LinkIcon
 } from "lucide-react";
 import { getSupabase } from "../supabase";
+import {
+  adminCrawler,
+  validateAndSanitizeUrl,
+  type CrawledKnowledgeRecord,
+  type UrlValidationResult
+} from "../crawler";
+
+export {
+  adminCrawler,
+  validateAndSanitizeUrl,
+  type CrawledKnowledgeRecord,
+  type UrlValidationResult
+};
 
 export type AdminTab = "crawler" | "knowledge" | "manual" | "health";
 
@@ -104,6 +117,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [crawlerStep, setCrawlerStep] = useState<number>(0);
   const [crawlerError, setCrawlerError] = useState<string | null>(null);
   const [crawledResult, setCrawledResult] = useState<any | null>(null);
+
+  // Live URL validation and sanitization status
+  const urlValidation = useMemo(() => {
+    if (!crawlerUrl.trim()) return null;
+    return validateAndSanitizeUrl(crawlerUrl);
+  }, [crawlerUrl]);
 
   // Manual Data Entry State
   const [manualTitle, setManualTitle] = useState("");
@@ -264,14 +283,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     runHealthCheck();
   }, [fetchRecords, runHealthCheck]);
 
-  // Execute Crawler Ingestion
+  // Execute Crawler Ingestion with URL Validation & Sanitization
   const handleStartCrawl = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!crawlerUrl.trim()) {
-      setCrawlerError("Please provide a valid web URL to crawl.");
+
+    // 1. URL Validator: Ensure the input string is a valid, sanitized URL before initiating fetch
+    const validation = validateAndSanitizeUrl(crawlerUrl);
+    if (!validation.isValid) {
+      setCrawlerError(validation.error || "Please provide a valid, well-formed web URL before crawling.");
       return;
     }
 
+    const sanitizedTargetUrl = validation.sanitizedUrl;
     setCrawlerError(null);
     setCrawledResult(null);
     setIsCrawling(true);
@@ -282,27 +305,62 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       const stepTimer1 = setTimeout(() => setCrawlerStep(2), 1100); // 2: Gemini Embeddings (768-dim)
       const stepTimer2 = setTimeout(() => setCrawlerStep(3), 2200); // 3: Supabase Indexing
 
-      const response = await fetch("/api/admin/crawl-ingest", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          url: crawlerUrl.trim(),
-          material_category: crawlerCategory,
-          customTitle: crawlerCustomTitle.trim() || undefined
-        })
-      });
+      let savedRecord: any = null;
 
-      clearTimeout(stepTimer1);
-      clearTimeout(stepTimer2);
+      try {
+        const response = await fetch("/api/admin/crawl-ingest", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            url: sanitizedTargetUrl,
+            material_category: crawlerCategory,
+            customTitle: crawlerCustomTitle.trim() || undefined
+          })
+        });
 
-      const result = await response.json();
+        clearTimeout(stepTimer1);
+        clearTimeout(stepTimer2);
 
-      if (!response.ok) {
-        throw new Error(result.error || "Crawler ingestion pipeline failed.");
+        // Fetch data from response using 'await response.text()' instead of 'response.json()'
+        // to prevent 'Unexpected token' parsing errors
+        const responseText = await response.text();
+        let result: any = null;
+        try {
+          result = JSON.parse(responseText);
+        } catch {
+          // Non-JSON response handled safely without throwing syntax errors
+        }
+
+        if (response.ok && result?.record) {
+          savedRecord = result.record;
+        } else if (result?.error) {
+          throw new Error(result.error);
+        }
+      } catch (serverErr) {
+        console.warn("[Admin Crawler] Server pipeline note, engaging direct crawler fallback:", serverErr);
+      }
+
+      // If server crawl did not produce record, execute client-side adminCrawler
+      // which fetches data from the sanitized URL using await response.text() instead of response.json()
+      // and saves the resulting string content to the Supabase knowledge_base table
+      if (!savedRecord) {
+        setCrawlerStep(2);
+        const crawlRes = await adminCrawler(
+          sanitizedTargetUrl,
+          crawlerCategory,
+          crawlerCustomTitle.trim() || undefined
+        );
+        if (crawlRes && crawlRes.record) {
+          savedRecord = crawlRes.record;
+        }
+      }
+
+      if (!savedRecord) {
+        throw new Error("Crawler was unable to save document into Supabase knowledge_base.");
       }
 
       setCrawlerStep(4); // 4: Complete
-      setCrawledResult(result.record);
+      setCrawledResult(savedRecord);
       setCrawlerUrl("");
       setCrawlerCustomTitle("");
       fetchRecords();
@@ -669,18 +727,37 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <div className="bg-white rounded-2xl border border-[#e2e8f0] p-6 sm:p-8 shadow-xs space-y-6">
                   <form onSubmit={handleStartCrawl} className="space-y-5">
                     
-                    {/* URL Input */}
+                    {/* URL Input with Live URL Validator */}
                     <div>
-                      <label htmlFor="crawler-url" className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-2">
-                        Target Document or Supplier Web Link *
-                      </label>
+                      <div className="flex items-center justify-between mb-2">
+                        <label htmlFor="crawler-url" className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+                          Target Document or Supplier Web Link *
+                        </label>
+                        {urlValidation && (
+                          <span className={`text-[11px] font-medium flex items-center gap-1 ${
+                            urlValidation.isValid ? "text-emerald-600" : "text-rose-600"
+                          }`}>
+                            {urlValidation.isValid ? (
+                              <>
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                Validated URL
+                              </>
+                            ) : (
+                              <>
+                                <AlertTriangle className="w-3.5 h-3.5" />
+                                Invalid URL syntax
+                              </>
+                            )}
+                          </span>
+                        )}
+                      </div>
                       <div className="relative">
                         <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
                           <LinkIcon className="w-4 h-4" />
                         </div>
                         <input
                           id="crawler-url"
-                          type="url"
+                          type="text"
                           required
                           disabled={isCrawling}
                           value={crawlerUrl}
@@ -689,12 +766,41 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             if (crawlerError) setCrawlerError(null);
                           }}
                           placeholder="https://example.com/construction-price-bulletin-lagos"
-                          className="w-full pl-10 pr-4 py-3 bg-white text-sm text-slate-900 placeholder-slate-400 rounded-xl border border-slate-200 focus:outline-none focus:border-[#ae2424] focus:ring-4 focus:ring-[#ae2424]/10 transition-colors disabled:bg-slate-50"
+                          className={`w-full pl-10 pr-10 py-3 bg-white text-sm text-slate-900 placeholder-slate-400 rounded-xl border transition-colors disabled:bg-slate-50 ${
+                            urlValidation
+                              ? urlValidation.isValid
+                                ? "border-emerald-300 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10"
+                                : "border-rose-300 focus:border-rose-500 focus:ring-4 focus:ring-rose-500/10"
+                              : "border-slate-200 focus:outline-none focus:border-[#ae2424] focus:ring-4 focus:ring-[#ae2424]/10"
+                          }`}
                         />
+                        {urlValidation && (
+                          <div className="absolute inset-y-0 right-0 pr-3.5 flex items-center pointer-events-none">
+                            {urlValidation.isValid ? (
+                              <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                            ) : (
+                              <AlertTriangle className="w-4 h-4 text-rose-500" />
+                            )}
+                          </div>
+                        )}
                       </div>
-                      <p className="text-[11px] text-slate-400 mt-1.5">
-                        Accepts any publicly accessible web article, PDF reader link, or manufacturing rate bulletin.
-                      </p>
+                      {urlValidation && !urlValidation.isValid ? (
+                        <p className="text-[11px] text-rose-600 mt-1.5 flex items-center gap-1 font-medium">
+                          <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                          {urlValidation.error}
+                        </p>
+                      ) : urlValidation && urlValidation.isValid ? (
+                        <p className="text-[11px] text-emerald-700 mt-1.5 flex items-center gap-1">
+                          <span className="text-slate-400">Sanitized Target:</span>
+                          <span className="font-mono text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 truncate max-w-lg">
+                            {urlValidation.sanitizedUrl}
+                          </span>
+                        </p>
+                      ) : (
+                        <p className="text-[11px] text-slate-400 mt-1.5">
+                          Accepts any publicly accessible web article, PDF reader link, or manufacturing rate bulletin. Validated before initiating fetch to Jina AI bridge.
+                        </p>
+                      )}
                     </div>
 
                     {/* Category Selector & Custom Title */}
