@@ -22,9 +22,11 @@ import {
   ArrowRight,
   Send,
   SlidersHorizontal,
-  Briefcase
+  Briefcase,
+  Mic
 } from "lucide-react";
 import { getSupabase } from "./supabase";
+import { useVoiceToText } from "./useVoiceToText";
 import { INITIAL_MATERIALS, NIGERIAN_SUPPLIERS } from "./mockDatabase";
 import { MaterialItem, MaterialCategory, Supplier } from "./types";
 import AdminLogin from "./components/AdminLogin";
@@ -353,6 +355,48 @@ export default function App() {
     }
   };
 
+  // Voice-to-Text Integration for Landing Search Bar
+  const [landingVoiceNotice, setLandingVoiceNotice] = useState<string | null>(null);
+
+  const {
+    isListening: isLandingListening,
+    stopListening: stopLandingListening,
+    toggleListening: toggleLandingListening
+  } = useVoiceToText({
+    lang: "en-US",
+    autoStopTimeoutMs: 3200,
+    onResult: (spokenText) => {
+      if (spokenText) setQuery(spokenText);
+    },
+    onFinalResult: (finalQuery) => {
+      const trimmed = finalQuery.trim();
+      if (trimmed) {
+        setQuery(trimmed);
+        setActiveQuery(trimmed);
+        setHasSearched(true);
+        setLandingVoiceNotice(`Recognized: "${trimmed}"`);
+        setTimeout(() => setLandingVoiceNotice(null), 3000);
+      }
+    },
+    onError: (err) => {
+      setLandingVoiceNotice(err);
+      setTimeout(() => setLandingVoiceNotice(null), 4000);
+    }
+  });
+
+  const handleLandingMicClick = () => {
+    if (isLandingListening) {
+      stopLandingListening();
+      if (query.trim()) {
+        setActiveQuery(query.trim());
+        setHasSearched(true);
+      }
+    } else {
+      setLandingVoiceNotice("Listening... speak your construction requirements now");
+      toggleLandingListening();
+    }
+  };
+
   const handleResetToLanding = () => {
     setHasSearched(false);
     setQuery("");
@@ -533,7 +577,7 @@ Source: Shurefire Sovereign Construction Search (https://shurefire.ng)`;
             </div>
 
             {/* Search Bar Assembly */}
-            <form onSubmit={handleSearchSubmit} className="w-full max-w-[620px] space-y-5">
+            <form onSubmit={handleSearchSubmit} className="w-full max-w-[620px] space-y-4">
               <div className="relative flex items-center bg-white rounded-full border border-slate-300 shadow-sm focus-within:border-[#ae2424] focus-within:ring-2 focus-within:ring-[#ae2424]/10 transition-all duration-150 px-4 py-3 sm:py-3.5">
                 <Search className="h-5 w-5 text-[#ae2424] shrink-0 mr-3" />
                 <input
@@ -541,20 +585,88 @@ Source: Shurefire Sovereign Construction Search (https://shurefire.ng)`;
                   type="text"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search materials, structural estimates, or specs..."
-                  className="w-full bg-transparent text-[#0f172a] text-sm sm:text-base focus:outline-none placeholder:text-[#64748b]"
+                  placeholder={
+                    isLandingListening
+                      ? "Listening... Speak your construction requirements hands-free"
+                      : "Search materials, structural estimates, or specs..."
+                  }
+                  className={`w-full bg-transparent text-[#0f172a] text-sm sm:text-base focus:outline-none placeholder:text-[#64748b] pr-20 ${
+                    isLandingListening ? "placeholder-[#ae2424] font-medium" : ""
+                  }`}
                   autoFocus
                 />
-                {query && (
+                
+                {/* Search pill actions: Clear + Mic */}
+                <div className="absolute right-3 flex items-center gap-1">
+                  {query && (
+                    <button
+                      type="button"
+                      onClick={() => setQuery("")}
+                      className="p-1.5 text-slate-400 hover:text-slate-600 rounded-full transition-colors cursor-pointer"
+                      title="Clear query"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+
+                  {/* Voice-to-Text Microphone Button */}
                   <button
                     type="button"
-                    onClick={() => setQuery("")}
-                    className="p-1 text-slate-400 hover:text-slate-600 rounded-full transition-colors cursor-pointer"
+                    onClick={handleLandingMicClick}
+                    className={`p-2 rounded-full transition-all cursor-pointer relative ${
+                      isLandingListening
+                        ? "bg-[#ae2424] text-white shadow-md ring-2 ring-[#ae2424]/30 scale-105"
+                        : "text-slate-400 hover:text-[#ae2424] hover:bg-slate-100"
+                    }`}
+                    title={
+                      isLandingListening
+                        ? "Listening... Click to stop and search"
+                        : "Voice search: Speak construction requirements hands-free"
+                    }
+                    aria-label="Voice-to-text search"
                   >
-                    <X className="w-4 h-4" />
+                    {isLandingListening ? (
+                      <>
+                        <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-rose-400 animate-ping" />
+                        <Mic className="w-4 h-4 animate-pulse" />
+                      </>
+                    ) : (
+                      <Mic className="w-4 h-4" />
+                    )}
                   </button>
-                )}
+                </div>
               </div>
+
+              {/* Landing Voice Status Pill */}
+              {(isLandingListening || landingVoiceNotice) && (
+                <div
+                  className={`flex items-center justify-between px-4 py-1.5 rounded-full text-xs shadow-sm transition-all ${
+                    isLandingListening
+                      ? "bg-[#ae2424] text-white animate-fade-in"
+                      : "bg-slate-800 text-white"
+                  }`}
+                >
+                  <span className="flex items-center gap-1.5 font-medium truncate">
+                    {isLandingListening && <span className="w-2 h-2 rounded-full bg-white animate-ping shrink-0" />}
+                    <span className="truncate">{landingVoiceNotice || "Listening... Speak your construction query"}</span>
+                  </span>
+                  {isLandingListening && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        stopLandingListening();
+                        if (query.trim()) {
+                          setActiveQuery(query.trim());
+                          setHasSearched(true);
+                        }
+                      }}
+                      className="ml-2 px-2.5 py-0.5 rounded-full bg-white/20 hover:bg-white/30 text-white text-[11px] font-bold shrink-0 cursor-pointer"
+                    >
+                      Done & Search
+                    </button>
+                  )}
+                </div>
+              )}
 
               {/* CTA Action Buttons */}
               <div className="flex items-center justify-center gap-3 pt-1">
