@@ -4,6 +4,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { queryLiveStockSuppliers, NIGERIAN_SUPPLIERS, INITIAL_MATERIALS } from "./src/mockDatabase.js";
 import { MaterialCategory, SupplyRegion, GroundingSource } from "./src/types.js";
 import { db } from "./src/firebase.js";
@@ -36,6 +37,34 @@ async function startServer() {
       Promise.resolve(promiseLike),
       new Promise<T>((_, reject) => setTimeout(() => reject(new Error("Database request timed out")), ms))
     ]);
+  };
+
+  // Helper: Dedicated server-only admin Supabase client using SUPABASE_SERVICE_ROLE_KEY
+  let adminSupabaseInstance: SupabaseClient | null = null;
+  const getAdminSupabase = (): SupabaseClient => {
+    const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+
+    if (!url) {
+      throw new Error("SUPABASE_URL is not configured.");
+    }
+
+    if (!serviceKey) {
+      throw new Error(
+        "SUPABASE_SERVICE_ROLE_KEY is not configured. Server-side administrative database operations require this key."
+      );
+    }
+
+    if (!adminSupabaseInstance) {
+      adminSupabaseInstance = createClient(url, serviceKey, {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+        },
+      });
+    }
+
+    return adminSupabaseInstance;
   };
 
   // Helper: Retrieve the server-side Gemini client safely
@@ -1842,8 +1871,8 @@ Return a valid JSON object strictly matching this schema:
       let savedToSupabase = false;
 
       try {
-        const supabase = getSupabase();
-        const { data: insertedData, error: supaErr } = await supabase
+        const adminSupabase = getAdminSupabase();
+        const { data: insertedData, error: supaErr } = await adminSupabase
           .from("knowledge_base")
           .insert(supabasePayload)
           .select("id, title, content, url, material_category, created_at, updated_at")
@@ -2027,7 +2056,7 @@ Return a valid JSON object strictly matching this schema:
       let savedToSupabase = false;
 
       try {
-        const supabase = getSupabase();
+        const adminSupabase = getAdminSupabase();
         if (hasExistingUuid) {
           // Existing record: preserve the valid UUID on upsert
           const updatePayload: Record<string, any> = {
@@ -2040,7 +2069,7 @@ Return a valid JSON object strictly matching this schema:
             updated_at: nowIso
           };
 
-          const { data: upsertData, error: upsertErr } = await supabase
+          const { data: upsertData, error: upsertErr } = await adminSupabase
             .from("knowledge_base")
             .upsert(updatePayload)
             .select("id, title, content, url, material_category, created_at, updated_at")
@@ -2066,7 +2095,7 @@ Return a valid JSON object strictly matching this schema:
             updated_at: nowIso
           };
 
-          const { data: insertData, error: insertErr } = await supabase
+          const { data: insertData, error: insertErr } = await adminSupabase
             .from("knowledge_base")
             .insert(insertPayload)
             .select("id, title, content, url, material_category, created_at, updated_at")
@@ -2250,8 +2279,8 @@ Return a valid JSON object strictly matching this schema:
       
       // Delete from Supabase
       try {
-        const supabase = getSupabase();
-        await supabase
+        const adminSupabase = getAdminSupabase();
+        await adminSupabase
           .from("knowledge_base")
           .delete()
           .eq("id", id);
