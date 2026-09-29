@@ -335,9 +335,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           savedRecord = result.record;
         } else if (result?.error) {
           throw new Error(result.error);
+        } else if (!response.ok) {
+          throw new Error(`Crawl ingestion failed with status ${response.status}`);
         }
-      } catch (serverErr) {
-        console.warn("[Admin Crawler] Server pipeline note, engaging direct crawler fallback:", serverErr);
+      } catch (serverErr: any) {
+        console.warn("[Admin Crawler] Server pipeline error:", serverErr);
+        if (serverErr?.message && !serverErr.message.toLowerCase().includes("failed to fetch")) {
+          throw serverErr;
+        }
       }
 
       // If server crawl did not produce record, execute client-side adminCrawler

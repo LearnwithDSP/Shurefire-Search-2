@@ -1680,7 +1680,7 @@ Return a valid JSON object strictly matching this schema:
   });
 
   // API Endpoint: URL Scraper via Jina Reader API + 768-dim Gemini Embeddings + Supabase Ingestion
-  app.post("/api/admin/crawl-ingest", async (req, res) => {
+  app.post(["/api/admin/crawl-ingest", "/api/crawl-ingest"], async (req, res) => {
     try {
       const { url, material_category, customTitle } = req.body;
       if (!url || typeof url !== "string") {
@@ -1827,10 +1827,10 @@ Return a valid JSON object strictly matching this schema:
 
       // 3. Save into Supabase public.knowledge_base
       // For NEW records: DO NOT provide the id, allow PostgreSQL gen_random_uuid() to generate the UUID
+      // Only include valid database columns: title, content, url, material_category, embedding, created_at, updated_at
       const supabasePayload: Record<string, any> = {
         title: extractedTitle,
         content: extractedContent,
-        content_text: extractedContent,
         url: cleanUrl || null,
         material_category: category,
         embedding: embeddingVector,
@@ -1846,7 +1846,7 @@ Return a valid JSON object strictly matching this schema:
         const { data: insertedData, error: supaErr } = await supabase
           .from("knowledge_base")
           .insert(supabasePayload)
-          .select("id, title, content, content_text, url, material_category, created_at, updated_at")
+          .select("id, title, content, url, material_category, created_at, updated_at")
           .single();
 
         if (!supaErr && insertedData?.id) {
@@ -1871,7 +1871,6 @@ Return a valid JSON object strictly matching this schema:
           id: finalRecordId,
           title: extractedTitle,
           content: extractedContent,
-          content_text: extractedContent,
           url: cleanUrl || null,
           material_category: category,
           embeddingLength: embeddingVector.length,
@@ -2034,7 +2033,6 @@ Return a valid JSON object strictly matching this schema:
           const updatePayload: Record<string, any> = {
             id: id.trim(),
             title: title || `${category} Standard Spec`,
-            content_text: content.trim(),
             content: content.trim(),
             url: url || null,
             material_category: category,
@@ -2045,7 +2043,7 @@ Return a valid JSON object strictly matching this schema:
           const { data: upsertData, error: upsertErr } = await supabase
             .from("knowledge_base")
             .upsert(updatePayload)
-            .select("id, title, content, content_text, url, material_category, created_at, updated_at")
+            .select("id, title, content, url, material_category, created_at, updated_at")
             .single();
 
           if (!upsertErr && upsertData?.id) {
@@ -2060,7 +2058,6 @@ Return a valid JSON object strictly matching this schema:
           // New record: DO NOT provide id, allow PostgreSQL gen_random_uuid() to generate it
           const insertPayload: Record<string, any> = {
             title: title || `${category} Standard Spec`,
-            content_text: content.trim(),
             content: content.trim(),
             url: url || null,
             material_category: category,
@@ -2072,7 +2069,7 @@ Return a valid JSON object strictly matching this schema:
           const { data: insertData, error: insertErr } = await supabase
             .from("knowledge_base")
             .insert(insertPayload)
-            .select("id, title, content, content_text, url, material_category, created_at, updated_at")
+            .select("id, title, content, url, material_category, created_at, updated_at")
             .single();
 
           if (!insertErr && insertData?.id) {
@@ -2098,7 +2095,6 @@ Return a valid JSON object strictly matching this schema:
           id: finalRecordId,
           title: title || `${category} Standard Spec`,
           content: content.trim(),
-          content_text: content.trim(),
           url: url || null,
           material_category: category,
           embeddingLength: embeddingVector.length,
@@ -2114,7 +2110,6 @@ Return a valid JSON object strictly matching this schema:
         id: finalRecordId,
         title: title || `${category} Standard Spec`,
         content: content.trim(),
-        content_text: content.trim(),
         url: url || "",
         material_category: category,
         embedding_dim: embeddingVector.length,
