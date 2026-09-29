@@ -1,5 +1,3 @@
-import { getSupabase } from "./supabase";
-
 export interface UrlValidationResult {
   isValid: boolean;
   sanitizedUrl: string;
@@ -99,6 +97,7 @@ export interface CrawlKnowledgeParams {
   materialCategory?: string;
   title?: string;
   customTitle?: string;
+  description?: string;
 }
 
 export interface CrawledKnowledgeRecord {
@@ -107,7 +106,8 @@ export interface CrawledKnowledgeRecord {
   content: string;
   url: string;
   material_category: string;
-  content_text?: string;
+  has_embedding?: boolean;
+  embedding_dim?: number;
   created_at?: string;
   updated_at?: string;
   [key: string]: any;
@@ -120,124 +120,48 @@ export interface CrawlResult {
 }
 
 /**
- * Admin Crawler function that safely scrapes document / page content via r.jina.ai
- * and stores it into Supabase public.knowledge_base.
- *
- * Avoids "Unexpected token 'T', 'The page c'... is not valid JSON" by:
- * 1. Setting request header `Accept: application/json` on fetch(`https://r.jina.ai/${targetUrl}`)
- * 2. Reading the response with `await response.text()` and safely parsing JSON with fallback to plain text/markdown
- * 3. Extracting the page content and title safely without triggering JSON parsing errors
- * 4. Saving the resulting record into Supabase `public.knowledge_base` with title, content, url, and material_category
+ * Authoritative Crawler Invocation:
+ * Directly sends the crawl request to the secure server-side endpoint POST /api/admin/crawl-ingest.
+ * The server handles content extraction, 768-dim Gemini embedding, and persistence into Supabase public.knowledge_base.
+ * No secondary client-side fallbacks or confusing 404s.
  */
-export async function adminCrawler(
+export async function crawlSource(
   targetUrl: string,
   materialCategory: string = "Cement",
-  customTitle?: string
+  customTitle?: string,
+  customDescription?: string
 ): Promise<CrawlResult> {
-  // Validate and sanitize the URL before initiating fetch request
   const validation = validateAndSanitizeUrl(targetUrl);
   if (!validation.isValid) {
     throw new Error(validation.error || "A valid, well-formed URL is required.");
   }
 
-  const cleanUrl = validation.sanitizedUrl;
-  const category = materialCategory || "Cement";
-  const jinaEndpoint = `https://r.jina.ai/${cleanUrl}`;
-
-  let extractedTitle = customTitle?.trim() || "";
-  let extractedContent = "";
-
-  try {
-    // 1. When calling https://r.jina.ai/${targetUrl}, set Accept: application/json header
-    const response = await fetch(jinaEndpoint, {
-      method: "GET",
-      headers: {
-        "Accept": "application/json",
-        "X-Return-Format": "markdown"
-      }
-    });
-
-    // 1. & 2. Parse response using await response.text() to prevent JSON parse errors
-    const rawText = await response.text();
-
-    if (rawText && rawText.trim().length > 0) {
-      try {
-        const json = JSON.parse(rawText);
-        if (json && typeof json === "object") {
-          extractedTitle = extractedTitle || json.data?.title || json.title || "";
-          extractedContent = json.data?.content || json.content || "";
-        }
-      } catch {
-        // Response was not JSON (e.g. text/markdown or "The page cannot be found...")
-        // Handled cleanly without throwing any JSON parsing error
-      }
-
-      if (!extractedContent) {
-        extractedContent = rawText;
-      }
-    }
-  } catch (fetchErr: any) {
-    console.warn("[Admin Crawler] Jina fetch note:", fetchErr?.message || fetchErr);
-  }
-
-  // Safe title extraction
-  if (!extractedTitle) {
-    if (extractedContent) {
-      // Check for standard Jina header "Title: <title>"
-      const titleLine = extractedContent.match(/^Title:\s*(.+)$/m);
-      if (titleLine && titleLine[1]) {
-        extractedTitle = titleLine[1].trim();
-      } else {
-        // Check for Markdown H1
-        const h1Line = extractedContent.match(/^#+\s*(.+)$/m);
-        if (h1Line && h1Line[1]) {
-          extractedTitle = h1Line[1].trim();
-        }
-      }
-    }
-
-    if (!extractedTitle) {
-      try {
-        const parsed = new URL(cleanUrl);
-        extractedTitle = `${category} Bulletin - ${parsed.hostname}`;
-      } catch {
-        extractedTitle = `${category} Technical Specification`;
-      }
-    }
-  }
-
-  // Safe content extraction: if Jina metadata block is present, prioritize markdown body
-  if (extractedContent.includes("Markdown Content:")) {
-    const afterMarkdown = extractedContent.split("Markdown Content:")[1];
-    if (afterMarkdown && afterMarkdown.trim().length > 0) {
-      extractedContent = afterMarkdown.trim();
-    }
-  }
-
-  if (!extractedContent || extractedContent.trim().length === 0) {
-    extractedContent = `Technical specifications and supplier price data indexed for ${category} from ${cleanUrl}.`;
-  }
-
-  // 3. Delegate indexing and vectorization to secure server endpoint /api/admin/crawl-ingest
   const res = await fetch("/api/admin/crawl-ingest", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      url: cleanUrl,
-      material_category: category,
-      customTitle: extractedTitle
+      url: validation.sanitizedUrl,
+      material_category: materialCategory,
+      title: customTitle,
+      customTitle: customTitle,
+      description: customDescription
     })
   });
-  
+
   const data = await res.json().catch(() => null);
+
   if (res.ok && data?.record) {
-    return { success: true, record: data.record };
+    return {
+      success: true,
+      record: data.record
+    };
   }
-  
+
   throw new Error(data?.error || `Crawl ingestion failed with status ${res.status}`);
 }
 
 /**
- * Alias helper function for crawling and saving knowledge records
+ * Aliases for backwards compatibility
  */
-export const crawlAndSaveKnowledge = adminCrawler;
+export const adminCrawler = crawlSource;
+export const crawlAndSaveKnowledge = crawlSource;

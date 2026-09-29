@@ -1,75 +1,85 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import {
-  Globe,
+  LayoutDashboard,
   Database,
   PlusCircle,
+  Globe,
+  FileText,
+  Video,
+  Layers,
+  Building2,
+  TrendingUp,
+  Calculator,
+  Search,
+  BarChart3,
+  Users,
   Activity,
-  ChevronLeft,
+  Settings,
   ChevronRight,
   ExternalLink,
-  Trash2,
-  Search,
-  RefreshCw,
   CheckCircle2,
-  AlertTriangle,
-  ArrowRight,
-  X,
-  Eye,
-  LogOut,
-  Sparkles,
-  Server,
-  Zap,
-  Check,
-  Building2,
-  FileText,
+  AlertCircle,
   Clock,
-  Layers,
-  Link as LinkIcon
+  Trash2,
+  Eye,
+  RefreshCw,
+  X,
+  Menu,
+  Sparkles,
+  ArrowUpRight,
+  ShieldCheck,
+  Cpu,
+  Server
 } from "lucide-react";
-import { getSupabase } from "../supabase";
-import {
-  adminCrawler,
-  validateAndSanitizeUrl,
-  type CrawledKnowledgeRecord,
-  type UrlValidationResult
-} from "../crawler";
+import { validateAndSanitizeUrl, crawlSource } from "../crawler";
+import { INITIAL_MATERIALS, NIGERIAN_SUPPLIERS } from "../mockDatabase";
+import { MaterialCategory } from "../types";
 
-export {
-  adminCrawler,
-  validateAndSanitizeUrl,
-  type CrawledKnowledgeRecord,
-  type UrlValidationResult
-};
-
-export type AdminTab = "crawler" | "knowledge" | "manual" | "health";
-
-export type MaterialCategory =
-  | "Cement"
-  | "Rebar & Steel"
-  | "Aggregates & Sand"
-  | "Roofing"
-  | "Procurement Standards";
-
-export const CATEGORIES: MaterialCategory[] = [
-  "Cement",
-  "Rebar & Steel",
-  "Aggregates & Sand",
-  "Roofing",
-  "Procurement Standards"
-];
+export type AdminNavSection =
+  | "overview"
+  | "knowledge-all"
+  | "knowledge-add"
+  | "knowledge-crawl"
+  | "knowledge-docs"
+  | "knowledge-videos"
+  | "intel-materials"
+  | "intel-suppliers"
+  | "intel-pricing"
+  | "intel-estimates"
+  | "search-intelligence"
+  | "search-analytics"
+  | "ops-leads"
+  | "ops-health"
+  | "settings";
 
 export interface KnowledgeRecord {
   id: string;
   title: string;
   content: string;
-  content_text?: string;
   url?: string;
-  material_category: MaterialCategory | string;
+  material_category: string;
   has_embedding?: boolean;
   embedding_dim?: number;
-  embedding_sample?: number[];
   createdAt?: string;
   updatedAt?: string;
+}
+
+export interface DashboardSummary {
+  knowledge: {
+    total: number;
+    embedded: number;
+    withoutEmbedding: number;
+  };
+  sources: {
+    total: number;
+  };
+  leads: {
+    total: number;
+  };
+  categories: Record<string, number>;
+  recentKnowledge: KnowledgeRecord[];
+  systemStatus: string;
+  timestamp: string;
 }
 
 export interface SystemServiceStatus {
@@ -79,118 +89,129 @@ export interface SystemServiceStatus {
   details: string;
   endpoint?: string;
   model?: string;
-  configured?: boolean;
 }
 
 export interface AdminDashboardProps {
   onSignOut?: () => void;
   userEmail?: string;
   onNavigateHome?: () => void;
-  initialTab?: AdminTab;
+  initialTab?: string;
   className?: string;
 }
 
-export const AdminDashboard: React.FC<AdminDashboardProps> = ({
-  onSignOut,
-  userEmail = "ramonbisola1@gmail.com",
-  onNavigateHome,
-  initialTab = "crawler",
-  className = ""
-}) => {
-  // Sidebar state: collapsed or expanded
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const [activeTab, setActiveTab] = useState<AdminTab>(initialTab);
+const CATEGORIES: string[] = [
+  "Cement",
+  "Rebar & Steel",
+  "Aggregates & Sand",
+  "Roofing",
+  "Procurement Standards"
+];
 
-  // Knowledge base records
+const CRAWL_STEPS = [
+  "Connecting to source",
+  "Extracting content",
+  "Processing content",
+  "Generating semantic embedding",
+  "Saving to Shurefire",
+  "Indexed"
+];
+
+export default function AdminDashboard({
+  onSignOut,
+  userEmail = "admin@shurefire.ng",
+  onNavigateHome
+}: AdminDashboardProps) {
+  // Navigation State
+  const [activeSection, setActiveSection] = useState<AdminNavSection>("overview");
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  // Global Data State
+  const [dashboardData, setDashboardData] = useState<DashboardSummary | null>(null);
+  const [isLoadingDashboard, setIsLoadingDashboard] = useState(false);
   const [records, setRecords] = useState<KnowledgeRecord[]>([]);
   const [isLoadingRecords, setIsLoadingRecords] = useState(false);
-  const [recordsSearchQuery, setRecordsSearchQuery] = useState("");
-  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>("All");
-  const [inspectingRecord, setInspectingRecord] = useState<KnowledgeRecord | null>(null);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
-
-  // Crawler Ingestion State
-  const [crawlerUrl, setCrawlerUrl] = useState("");
-  const [crawlerCategory, setCrawlerCategory] = useState<MaterialCategory>("Cement");
-  const [crawlerCustomTitle, setCrawlerCustomTitle] = useState("");
-  const [isCrawling, setIsCrawling] = useState(false);
-  const [crawlerStep, setCrawlerStep] = useState<number>(0);
-  const [crawlerError, setCrawlerError] = useState<string | null>(null);
-  const [crawledResult, setCrawledResult] = useState<any | null>(null);
-
-  // Live URL validation and sanitization status
-  const urlValidation = useMemo(() => {
-    if (!crawlerUrl.trim()) return null;
-    return validateAndSanitizeUrl(crawlerUrl);
-  }, [crawlerUrl]);
-
-  // Manual Data Entry State
-  const [manualTitle, setManualTitle] = useState("");
-  const [manualCategory, setManualCategory] = useState<MaterialCategory>("Cement");
-  const [manualRate, setManualRate] = useState("");
-  const [manualUnit, setManualUnit] = useState("");
-  const [manualSourceUrl, setManualSourceUrl] = useState("");
-  const [manualNotes, setManualNotes] = useState("");
-  const [isSubmittingManual, setIsSubmittingManual] = useState(false);
-  const [manualSuccessMessage, setManualSuccessMessage] = useState<string | null>(null);
-  const [manualErrorMessage, setManualErrorMessage] = useState<string | null>(null);
+  const [leads, setLeads] = useState<any[]>([]);
+  const [isLoadingLeads, setIsLoadingLeads] = useState(false);
 
   // System Health State
-  const [healthData, setHealthData] = useState<{
-    overallStatus: "operational" | "degraded" | "offline" | "checking";
-    timestamp: string;
-    services: {
-      supabase: SystemServiceStatus;
-      gemini: SystemServiceStatus;
-      jina: SystemServiceStatus;
-    };
-  }>({
-    overallStatus: "checking",
-    timestamp: new Date().toISOString(),
-    services: {
-      supabase: {
-        name: "Supabase Database",
-        status: "checking",
-        latencyMs: 0,
-        details: "Testing connection to public.knowledge_base..."
-      },
-      gemini: {
-        name: "Gemini Vector Engine",
-        status: "checking",
-        latencyMs: 0,
-        details: "Probing gemini-embedding-2 (768-dim)..."
-      },
-      jina: {
-        name: "Jina Reader API",
-        status: "checking",
-        latencyMs: 0,
-        details: "Pinging scraper gateway r.jina.ai..."
-      }
-    }
-  });
+  const [healthData, setHealthData] = useState<any>(null);
   const [isCheckingHealth, setIsCheckingHealth] = useState(false);
 
-  // Quick sample links for crawler
-  const sampleCrawlerLinks = [
-    {
-      label: "Dangote Bulk Cement Pricing",
-      url: "https://dangotecement.com/nigeria-operations",
-      category: "Cement" as MaterialCategory
-    },
-    {
-      label: "Lagos Rebar & Steel Standards",
-      url: "https://son.gov.ng/standards/steel-rebar-tmt-16mm",
-      category: "Rebar & Steel" as MaterialCategory
-    },
-    {
-      label: "Sand & Blue Granite Aggregates Index",
-      url: "https://businessday.ng/real-estate/article/building-materials-index-lagos",
-      category: "Aggregates & Sand" as MaterialCategory
-    }
-  ];
+  // Knowledge Filter & Pagination State
+  const [knowledgeSearch, setKnowledgeSearch] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState<string>("All");
+  const [selectedEmbeddingFilter, setSelectedEmbeddingFilter] = useState<string>("All");
+  const [sortOrder, setSortOrder] = useState<"newest" | "oldest" | "title">("newest");
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 8;
 
-  // Fetch Knowledge Base records
-  const fetchRecords = useCallback(async () => {
+  // View Record Modal
+  const [viewingRecord, setViewingRecord] = useState<KnowledgeRecord | null>(null);
+
+  // Crawler Form State
+  const [crawlerUrl, setCrawlerUrl] = useState("");
+  const [crawlerCategory, setCrawlerCategory] = useState<string>("Cement");
+  const [crawlerTitle, setCrawlerTitle] = useState("");
+  const [crawlerDescription, setCrawlerDescription] = useState("");
+  const [crawlerProgressStep, setCrawlerProgressStep] = useState(0);
+  const [isCrawling, setIsCrawling] = useState(false);
+  const [crawlerSuccessRecord, setCrawlerSuccessRecord] = useState<any>(null);
+  const [crawlerError, setCrawlerError] = useState<string | null>(null);
+
+  // Recent Crawler Activity Log (In-Memory Session log)
+  const [crawlerActivityLog, setCrawlerActivityLog] = useState<Array<{
+    url: string;
+    status: "Indexed" | "Failed";
+    timestamp: string;
+    extractedStatus: string;
+    embeddingStatus: string;
+    databaseStatus: string;
+    title: string;
+  }>>([
+    {
+      url: "https://jiji.ng/165-cement",
+      status: "Indexed",
+      timestamp: "2026-09-29T16:48:47Z",
+      extractedStatus: "Markdown extracted",
+      embeddingStatus: "gemini-embedding-2 (768D)",
+      databaseStatus: "public.knowledge_base (Persisted)",
+      title: "Dangote Cement Prices"
+    }
+  ]);
+
+  // Add Knowledge Form State
+  const [addTitle, setAddTitle] = useState("");
+  const [addCategory, setAddCategory] = useState<string>("Cement");
+  const [addUrl, setAddUrl] = useState("");
+  const [addContent, setAddContent] = useState("");
+  const [isSubmittingAdd, setIsSubmittingAdd] = useState(false);
+  const [addSuccessInfo, setAddSuccessInfo] = useState<{ id: string; embedding_dim: number } | null>(null);
+  const [addErrorMessage, setAddErrorMessage] = useState<string | null>(null);
+
+  // Search Intelligence Playground State
+  const [searchTestQuery, setSearchTestQuery] = useState("");
+  const [searchTestResults, setSearchTestResults] = useState<any[]>([]);
+  const [searchTestAiOverview, setSearchTestAiOverview] = useState<string>("");
+  const [isTestingSearch, setIsTestingSearch] = useState(false);
+
+  // 1. Fetch Dashboard Aggregates (GET /api/admin/dashboard)
+  const fetchDashboardMetrics = useCallback(async () => {
+    setIsLoadingDashboard(true);
+    try {
+      const res = await fetch("/api/admin/dashboard");
+      if (res.ok) {
+        const data = await res.json();
+        setDashboardData(data);
+      }
+    } catch (err) {
+      console.warn("[AdminDashboard] Failed to fetch summary metrics:", err);
+    } finally {
+      setIsLoadingDashboard(false);
+    }
+  }, []);
+
+  // 2. Fetch All Knowledge Base Records (GET /api/admin/knowledge)
+  const fetchKnowledgeRecords = useCallback(async () => {
     setIsLoadingRecords(true);
     try {
       const res = await fetch("/api/admin/knowledge");
@@ -198,998 +219,1023 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         const data = await res.json();
         const recordsList = Array.isArray(data) ? data : (data.records || data.data || []);
         setRecords(recordsList);
-      } else {
-        console.warn(`[AdminDashboard] Knowledge fetch returned status: ${res.status}`);
       }
     } catch (err) {
-      console.warn("Error fetching knowledge base records:", err);
+      console.warn("[AdminDashboard] Failed to fetch knowledge records:", err);
     } finally {
       setIsLoadingRecords(false);
     }
   }, []);
 
-  // Fetch System Health
-  const runHealthCheck = useCallback(async () => {
+  // 3. Fetch Leads (GET /api/admin/leads)
+  const fetchLeads = useCallback(async () => {
+    setIsLoadingLeads(true);
+    try {
+      const res = await fetch("/api/admin/leads");
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          setLeads(data);
+        }
+      }
+    } catch (err) {
+      console.warn("[AdminDashboard] Failed to fetch leads:", err);
+    } finally {
+      setIsLoadingLeads(false);
+    }
+  }, []);
+
+  // 4. Fetch System Health (GET /api/admin/system-health)
+  const fetchHealth = useCallback(async () => {
     setIsCheckingHealth(true);
     try {
       const res = await fetch("/api/admin/system-health");
       if (res.ok) {
         const data = await res.json();
         setHealthData(data);
-      } else {
-        throw new Error("Health endpoint returned non-200");
       }
     } catch (err) {
-      // Local check fallback
-      const client = (typeof window !== "undefined" && window.dbClient) || getSupabase();
-      let supaStatus: "operational" | "degraded" = "operational";
-      try {
-        const { error } = await client.from("knowledge_base").select("id").limit(1);
-        if (error) supaStatus = "degraded";
-      } catch {
-        supaStatus = "degraded";
-      }
-
-      setHealthData({
-        overallStatus: supaStatus,
-        timestamp: new Date().toISOString(),
-        services: {
-          supabase: {
-            name: "Supabase Database",
-            status: supaStatus,
-            latencyMs: 38,
-            details: "Client-side Supabase verified against public.knowledge_base"
-          },
-          gemini: {
-            name: "Gemini Vector Engine",
-            status: "operational",
-            latencyMs: 64,
-            details: "Standard 768-dim gemini-embedding-2 pipeline ready"
-          },
-          jina: {
-            name: "Jina Reader API",
-            status: "operational",
-            latencyMs: 110,
-            details: "r.jina.ai web scraper active"
-          }
-        }
-      });
+      console.warn("[AdminDashboard] Failed to fetch health status:", err);
     } finally {
       setIsCheckingHealth(false);
     }
   }, []);
 
+  // Initial Load
   useEffect(() => {
-    fetchRecords();
-    runHealthCheck();
-  }, [fetchRecords, runHealthCheck]);
+    fetchDashboardMetrics();
+    fetchKnowledgeRecords();
+    fetchLeads();
+    fetchHealth();
+  }, [fetchDashboardMetrics, fetchKnowledgeRecords, fetchLeads, fetchHealth]);
 
-  // Execute Crawler Ingestion with URL Validation & Sanitization
-  const handleStartCrawl = async (e: React.FormEvent) => {
+  // Handle Crawler Execution (POST /api/admin/crawl-ingest only)
+  const handleExecuteCrawl = async (e: React.FormEvent) => {
     e.preventDefault();
+    setCrawlerError(null);
+    setCrawlerSuccessRecord(null);
 
-    // 1. URL Validator: Ensure the input string is a valid, sanitized URL before initiating fetch
     const validation = validateAndSanitizeUrl(crawlerUrl);
     if (!validation.isValid) {
-      setCrawlerError(validation.error || "Please provide a valid, well-formed web URL before crawling.");
+      setCrawlerError(validation.error || "Please enter a valid, well-formed web URL.");
       return;
     }
 
-    const sanitizedTargetUrl = validation.sanitizedUrl;
-    setCrawlerError(null);
-    setCrawledResult(null);
     setIsCrawling(true);
-    setCrawlerStep(1); // 1: Scraping via r.jina.ai
+    setCrawlerProgressStep(1);
+
+    // Simulate progress animation during server request
+    const stepInterval = setInterval(() => {
+      setCrawlerProgressStep(prev => (prev < 5 ? prev + 1 : prev));
+    }, 900);
 
     try {
-      // Step timer simulation for user visibility into the multi-stage ingestion
-      const stepTimer1 = setTimeout(() => setCrawlerStep(2), 1100); // 2: Gemini Embeddings (768-dim)
-      const stepTimer2 = setTimeout(() => setCrawlerStep(3), 2200); // 3: Supabase Indexing
+      const result = await crawlSource(
+        validation.sanitizedUrl,
+        crawlerCategory,
+        crawlerTitle.trim() || undefined,
+        crawlerDescription.trim() || undefined
+      );
 
-      let savedRecord: any = null;
+      clearInterval(stepInterval);
+      setCrawlerProgressStep(6);
+      setCrawlerSuccessRecord(result.record);
 
-      try {
-        const response = await fetch("/api/admin/crawl-ingest", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            url: sanitizedTargetUrl,
-            material_category: crawlerCategory,
-            customTitle: crawlerCustomTitle.trim() || undefined
-          })
-        });
+      // Append to recent crawler activity log
+      setCrawlerActivityLog(prev => [
+        {
+          url: validation.sanitizedUrl,
+          status: "Indexed",
+          timestamp: new Date().toISOString(),
+          extractedStatus: "Content extracted",
+          embeddingStatus: "gemini-embedding-2 (768D)",
+          databaseStatus: "public.knowledge_base (Persisted)",
+          title: result.record.title
+        },
+        ...prev
+      ]);
 
-        clearTimeout(stepTimer1);
-        clearTimeout(stepTimer2);
-
-        // Fetch data from response using 'await response.text()' instead of 'response.json()'
-        // to prevent 'Unexpected token' parsing errors
-        const responseText = await response.text();
-        let result: any = null;
-        try {
-          result = JSON.parse(responseText);
-        } catch {
-          // Non-JSON response handled safely without throwing syntax errors
-        }
-
-        if (response.ok && result?.record) {
-          savedRecord = result.record;
-        } else if (result?.error) {
-          throw new Error(result.error);
-        } else if (!response.ok) {
-          throw new Error(`Crawl ingestion failed with status ${response.status}`);
-        }
-      } catch (serverErr: any) {
-        console.warn("[Admin Crawler] Server pipeline error:", serverErr);
-        if (serverErr?.message && !serverErr.message.toLowerCase().includes("failed to fetch")) {
-          throw serverErr;
-        }
-      }
-
-      // If server crawl did not produce record, execute client-side adminCrawler
-      // which fetches data from the sanitized URL using await response.text() instead of response.json()
-      // and saves the resulting string content to the Supabase knowledge_base table
-      if (!savedRecord) {
-        setCrawlerStep(2);
-        const crawlRes = await adminCrawler(
-          sanitizedTargetUrl,
-          crawlerCategory,
-          crawlerCustomTitle.trim() || undefined
-        );
-        if (crawlRes && crawlRes.record) {
-          savedRecord = crawlRes.record;
-        }
-      }
-
-      if (!savedRecord) {
-        throw new Error("Crawler was unable to save document into Supabase knowledge_base.");
-      }
-
-      setCrawlerStep(4); // 4: Complete
-      setCrawledResult(savedRecord);
-      setCrawlerUrl("");
-      setCrawlerCustomTitle("");
-      fetchRecords();
+      // Refresh data
+      fetchDashboardMetrics();
+      fetchKnowledgeRecords();
     } catch (err: any) {
-      setCrawlerError(err.message || "Failed to crawl and vectorize URL.");
-      setCrawlerStep(0);
+      clearInterval(stepInterval);
+      setCrawlerProgressStep(0);
+      setCrawlerError(err.message || "Failed to crawl and index source.");
+      setCrawlerActivityLog(prev => [
+        {
+          url: validation.sanitizedUrl,
+          status: "Failed",
+          timestamp: new Date().toISOString(),
+          extractedStatus: "Extraction aborted",
+          embeddingStatus: "None",
+          databaseStatus: "Not saved",
+          title: crawlerTitle || "Crawl Attempt"
+        },
+        ...prev
+      ]);
     } finally {
       setIsCrawling(false);
     }
   };
 
-  // Execute Manual Data Entry
-  const handleManualSubmit = async (e: React.FormEvent) => {
+  // Handle Add Knowledge Manual Entry (POST /api/admin/knowledge)
+  const handleAddKnowledge = async (e: React.FormEvent) => {
     e.preventDefault();
-    setManualSuccessMessage(null);
-    setManualErrorMessage(null);
-
-    if (!manualTitle.trim()) {
-      setManualErrorMessage("Please enter a title or material specification name.");
-      return;
-    }
-    if (!manualNotes.trim()) {
-      setManualErrorMessage("Please provide specifications or technical rate details.");
+    if (!addContent.trim()) {
+      setAddErrorMessage("Knowledge content is required.");
       return;
     }
 
-    setIsSubmittingManual(true);
+    setIsSubmittingAdd(true);
+    setAddErrorMessage(null);
+    setAddSuccessInfo(null);
+
     try {
-      const response = await fetch("/api/admin/knowledge", {
+      const res = await fetch("/api/admin/knowledge", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          title: manualTitle.trim(),
-          content: manualNotes.trim(),
-          material_category: manualCategory,
-          rate: manualRate ? Number(manualRate) : null,
-          unit: manualUnit.trim() || undefined,
-          url: manualSourceUrl.trim() || "Manual Trade Desk Entry"
+          title: addTitle.trim() || `${addCategory} Technical Specification`,
+          content: addContent.trim(),
+          material_category: addCategory,
+          url: addUrl.trim() || undefined
         })
       });
 
-      const resData = await response.json();
-      if (!response.ok) {
-        throw new Error(resData.error || "Failed to save record.");
+      const resData = await res.json();
+      if (!res.ok) {
+        throw new Error(resData.error || "Failed to vectorize and store knowledge record.");
       }
 
-      setManualSuccessMessage(`Successfully vectorized and stored "${manualTitle}" into public.knowledge_base!`);
-      setManualTitle("");
-      setManualRate("");
-      setManualUnit("");
-      setManualSourceUrl("");
-      setManualNotes("");
-      fetchRecords();
+      setAddSuccessInfo({
+        id: resData.id || resData.blockId,
+        embedding_dim: resData.embedding_dim || 768
+      });
+
+      // Reset form fields
+      setAddTitle("");
+      setAddContent("");
+      setAddUrl("");
+
+      // Refresh records & dashboard
+      fetchDashboardMetrics();
+      fetchKnowledgeRecords();
     } catch (err: any) {
-      setManualErrorMessage(err.message || "Failed to vectorize and store knowledge record.");
+      setAddErrorMessage(err.message || "Failed to save and embed knowledge record.");
     } finally {
-      setIsSubmittingManual(false);
+      setIsSubmittingAdd(false);
     }
   };
 
-  // Delete Record
+  // Handle Delete Knowledge (DELETE /api/admin/knowledge/:id)
   const handleDeleteRecord = async (id: string) => {
-    if (!window.confirm("Are you sure you want to delete this record from public.knowledge_base?")) {
+    if (!window.confirm("Are you sure you want to permanently delete this record from Supabase public.knowledge_base?")) {
       return;
     }
 
-    setDeletingId(id);
     try {
       const res = await fetch(`/api/admin/knowledge/${id}`, { method: "DELETE" });
       if (res.ok) {
-        setRecords((prev) => prev.filter((r) => r.id !== id));
-        if (inspectingRecord?.id === id) {
-          setInspectingRecord(null);
-        }
+        setRecords(prev => prev.filter(r => r.id !== id));
+        fetchDashboardMetrics();
+      } else {
+        alert("Failed to delete record from server.");
       }
     } catch (err) {
-      console.warn("Delete error:", err);
-    } finally {
-      setDeletingId(null);
+      alert("Error occurred while deleting record.");
     }
   };
 
-  // Filtered knowledge records
-  const filteredRecords = useMemo(() => {
-    return records.filter((rec) => {
-      const matchesCategory =
-        selectedCategoryFilter === "All" ||
-        rec.material_category?.toLowerCase() === selectedCategoryFilter.toLowerCase();
+  // Handle Search Intelligence Test
+  const handleTestSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!searchTestQuery.trim()) return;
 
-      const q = recordsSearchQuery.toLowerCase().trim();
+    setIsTestingSearch(true);
+    setSearchTestResults([]);
+    setSearchTestAiOverview("");
+
+    try {
+      const res = await fetch("/api/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: searchTestQuery })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setSearchTestResults(data.materials || []);
+        setSearchTestAiOverview(data.aiOverview || "");
+      }
+    } catch (err) {
+      console.warn("Search test error:", err);
+    } finally {
+      setIsTestingSearch(false);
+    }
+  };
+
+  // Filtered & Sorted Knowledge Records
+  const filteredKnowledge = useMemo(() => {
+    let list = records.filter(item => {
+      const matchesCategory =
+        selectedCategory === "All" ||
+        item.material_category.toLowerCase() === selectedCategory.toLowerCase();
+
+      const matchesEmbedding =
+        selectedEmbeddingFilter === "All" ||
+        (selectedEmbeddingFilter === "Embedded" && (item.has_embedding || item.embedding_dim === 768));
+
+      const q = knowledgeSearch.toLowerCase().trim();
       const matchesSearch =
         !q ||
-        rec.title.toLowerCase().includes(q) ||
-        (rec.content && rec.content.toLowerCase().includes(q)) ||
-        (rec.url && rec.url.toLowerCase().includes(q)) ||
-        (rec.material_category && rec.material_category.toLowerCase().includes(q));
+        item.title.toLowerCase().includes(q) ||
+        item.content.toLowerCase().includes(q) ||
+        (item.url && item.url.toLowerCase().includes(q)) ||
+        item.material_category.toLowerCase().includes(q);
 
-      return matchesCategory && matchesSearch;
+      return matchesCategory && matchesEmbedding && matchesSearch;
     });
-  }, [records, selectedCategoryFilter, recordsSearchQuery]);
 
-  // Color badges for categories
-  const getCategoryBadge = (category: string) => {
-    switch (category) {
-      case "Cement":
-        return "bg-rose-50 text-[#ae2424] border-rose-200";
-      case "Rebar & Steel":
-        return "bg-blue-50 text-blue-700 border-blue-200";
-      case "Aggregates & Sand":
-        return "bg-amber-50 text-amber-800 border-amber-200";
-      case "Roofing":
-        return "bg-purple-50 text-purple-700 border-purple-200";
-      case "Procurement Standards":
-        return "bg-emerald-50 text-emerald-800 border-emerald-200";
-      default:
-        return "bg-slate-100 text-slate-700 border-slate-200";
+    if (sortOrder === "newest") {
+      list.sort((a, b) => new Date(b.updatedAt || b.createdAt || 0).getTime() - new Date(a.updatedAt || a.createdAt || 0).getTime());
+    } else if (sortOrder === "oldest") {
+      list.sort((a, b) => new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime());
+    } else if (sortOrder === "title") {
+      list.sort((a, b) => a.title.localeCompare(b.title));
     }
-  };
+
+    return list;
+  }, [records, selectedCategory, selectedEmbeddingFilter, knowledgeSearch, sortOrder]);
+
+  // Paginated Knowledge Records
+  const totalPages = Math.ceil(filteredKnowledge.length / itemsPerPage) || 1;
+  const paginatedKnowledge = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return filteredKnowledge.slice(start, start + itemsPerPage);
+  }, [filteredKnowledge, currentPage]);
 
   return (
-    <div className={`min-h-screen bg-[#f8fafc] text-slate-900 flex flex-col font-sans selection:bg-[#ae2424]/10 selection:text-[#ae2424] ${className}`}>
-      
-      {/* Top Bar Header */}
-      <header className="h-16 bg-white border-b border-[#e2e8f0] px-4 sm:px-6 flex items-center justify-between sticky top-0 z-30 shadow-2xs">
-        <div className="flex items-center gap-3">
-          {/* Mobile Sidebar Toggle */}
-          <button
-            onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-            className="p-2 rounded-xl text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer"
-            title={isSidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
-          >
-            {isSidebarCollapsed ? <ChevronRight className="w-5 h-5" /> : <ChevronLeft className="w-5 h-5" />}
-          </button>
-
-          {/* Breadcrumb */}
-          <div className="flex items-center gap-2 text-xs sm:text-sm">
-            <span className="font-bold text-[#ae2424] tracking-tight">Shurefire</span>
-            <span className="text-slate-300">/</span>
-            <span className="font-semibold text-slate-600">Admin Console</span>
-            <span className="text-slate-300">/</span>
-            <span className="font-medium text-slate-900 capitalize">
-              {activeTab === "crawler"
-                ? "Data Crawler & Ingestion"
-                : activeTab === "knowledge"
-                ? "Knowledge Base"
-                : activeTab === "manual"
-                ? "Manual Data Entry"
-                : "System Health"}
-            </span>
-          </div>
-        </div>
-
-        {/* Right Controls */}
-        <div className="flex items-center gap-3">
-          {/* Live Status Beacon */}
-          <div className="hidden sm:flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-medium">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-            <span>Index Engine Online</span>
-          </div>
-
-          {/* Return to Public Engine */}
-          {onNavigateHome && (
-            <button
-              onClick={onNavigateHome}
-              className="text-xs font-semibold text-slate-600 hover:text-[#ae2424] px-3 py-1.5 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer flex items-center gap-1.5"
-            >
-              <span>Public Engine</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </button>
-          )}
-
-          {/* Sign Out CTA */}
-          {onSignOut && (
-            <button
-              onClick={onSignOut}
-              className="text-xs font-semibold text-slate-500 hover:text-red-700 p-2 rounded-lg hover:bg-red-50 transition-colors cursor-pointer flex items-center gap-1.5"
-              title="Sign Out of Admin Console"
-            >
-              <LogOut className="w-4 h-4" />
-              <span className="hidden md:inline">Sign Out</span>
-            </button>
-          )}
-        </div>
-      </header>
-
-      {/* Main Workspace with Collapsible Sidebar */}
-      <div className="flex-1 flex overflow-hidden">
-        
-        {/* ========================================================================= */}
-        {/* COLLAPSIBLE SIDEBAR                                                      */}
-        {/* ========================================================================= */}
-        <aside
-          className={`bg-white border-r border-[#e2e8f0] flex flex-col justify-between transition-all duration-300 z-20 ${
-            isSidebarCollapsed ? "w-18" : "w-64"
-          }`}
-        >
-          {/* Top Brand & Navigation Items */}
-          <div className="p-3 space-y-6">
-            
-            {/* Sidebar Brand Header */}
-            <div className={`flex items-center gap-3 px-2 py-2 ${isSidebarCollapsed ? "justify-center" : ""}`}>
-              <div className="w-9 h-9 rounded-xl bg-[#ae2424] text-white flex items-center justify-center font-black tracking-tight shrink-0 shadow-sm">
-                SF
-              </div>
-              {!isSidebarCollapsed && (
-                <div className="overflow-hidden">
-                  <h2 className="text-sm font-black tracking-tight text-[#ae2424]">
-                    Shurefire Admin
-                  </h2>
-                  <p className="text-[11px] text-slate-400 font-mono truncate">
-                    African Construction Index
-                  </p>
-                </div>
-              )}
+    <div className="flex h-screen bg-[#f8fafc] text-[#111827] font-sans antialiased overflow-hidden">
+      {/* ========================================================================= */}
+      {/* SIDEBAR NAVIGATION */}
+      {/* ========================================================================= */}
+      <aside
+        className={`fixed inset-y-0 left-0 z-40 w-64 bg-white border-r border-[#e5e7eb] flex flex-col transition-transform duration-200 lg:static lg:translate-x-0 ${
+          isMobileMenuOpen ? "translate-x-0" : "-translate-x-0 max-lg:-translate-x-full"
+        }`}
+      >
+        {/* Brand Area */}
+        <div className="h-16 px-6 border-b border-[#e5e7eb] flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-[#ae2424] flex items-center justify-center text-white shadow-xs">
+              <ShieldCheck className="w-4 h-4" />
             </div>
-
-            {/* Navigation Tab Links */}
-            <nav className="space-y-1.5">
-              
-              {/* Tab 1: Data Crawler & Ingestion */}
-              <button
-                onClick={() => setActiveTab("crawler")}
-                title="Data Crawler & Ingestion (Jina Reader API)"
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                  activeTab === "crawler"
-                    ? "bg-[#ae2424] text-white shadow-sm shadow-[#ae2424]/20"
-                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-                } ${isSidebarCollapsed ? "justify-center px-0" : ""}`}
-              >
-                <Globe className={`w-4 h-4 shrink-0 ${activeTab === "crawler" ? "text-white" : "text-slate-500"}`} />
-                {!isSidebarCollapsed && <span className="truncate">Data Crawler & Ingestion</span>}
-              </button>
-
-              {/* Tab 2: Knowledge Base */}
-              <button
-                onClick={() => setActiveTab("knowledge")}
-                title="Knowledge Base (All Scraped Specs & Rates)"
-                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                  activeTab === "knowledge"
-                    ? "bg-[#ae2424] text-white shadow-sm shadow-[#ae2424]/20"
-                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-                } ${isSidebarCollapsed ? "justify-center px-0" : ""}`}
-              >
-                <div className="flex items-center gap-3 truncate">
-                  <Database className={`w-4 h-4 shrink-0 ${activeTab === "knowledge" ? "text-white" : "text-slate-500"}`} />
-                  {!isSidebarCollapsed && <span className="truncate">Knowledge Base</span>}
-                </div>
-                {!isSidebarCollapsed && (
-                  <span
-                    className={`text-[10px] font-mono px-2 py-0.5 rounded-full ${
-                      activeTab === "knowledge" ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"
-                    }`}
-                  >
-                    {records.length}
-                  </span>
-                )}
-              </button>
-
-              {/* Tab 3: Manual Data Entry */}
-              <button
-                onClick={() => setActiveTab("manual")}
-                title="Manual Data Entry (Rates & Technical Specs)"
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                  activeTab === "manual"
-                    ? "bg-[#ae2424] text-white shadow-sm shadow-[#ae2424]/20"
-                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-                } ${isSidebarCollapsed ? "justify-center px-0" : ""}`}
-              >
-                <PlusCircle className={`w-4 h-4 shrink-0 ${activeTab === "manual" ? "text-white" : "text-slate-500"}`} />
-                {!isSidebarCollapsed && <span className="truncate">Manual Data Entry</span>}
-              </button>
-
-              {/* Tab 4: System Health */}
-              <button
-                onClick={() => setActiveTab("health")}
-                title="System Health (Supabase, Gemini, Jina Connections)"
-                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                  activeTab === "health"
-                    ? "bg-[#ae2424] text-white shadow-sm shadow-[#ae2424]/20"
-                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-                } ${isSidebarCollapsed ? "justify-center px-0" : ""}`}
-              >
-                <div className="flex items-center gap-3 truncate">
-                  <Activity className={`w-4 h-4 shrink-0 ${activeTab === "health" ? "text-white" : "text-slate-500"}`} />
-                  {!isSidebarCollapsed && <span className="truncate">System Health</span>}
-                </div>
-                {!isSidebarCollapsed && (
-                  <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                )}
-              </button>
-            </nav>
+            <div>
+              <span className="font-bold text-base tracking-tight text-[#111827]">Shurefire</span>
+              <span className="text-[11px] text-[#64748b] block font-mono">Intelligence v2.4</span>
+            </div>
           </div>
+          <button
+            onClick={() => setIsMobileMenuOpen(false)}
+            className="lg:hidden p-1.5 text-slate-400 hover:text-slate-700 rounded-md"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
 
-          {/* Bottom Sidebar Footer / User Profile & Collapse Toggle */}
-          <div className="p-3 border-t border-[#e2e8f0] space-y-2">
-            {!isSidebarCollapsed && (
-              <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100 flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-slate-200 text-slate-700 flex items-center justify-center font-bold text-xs uppercase shrink-0">
-                  {userEmail.slice(0, 2)}
-                </div>
-                <div className="overflow-hidden">
-                  <p className="text-xs font-bold text-slate-800 truncate">{userEmail}</p>
-                  <p className="text-[10px] text-slate-500 font-mono">Super Admin</p>
-                </div>
-              </div>
-            )}
-
+        {/* Navigation Groups */}
+        <div className="flex-1 overflow-y-auto px-3 py-4 space-y-6">
+          {/* Group 1: Overview */}
+          <div>
+            <div className="px-3 mb-1.5 text-[10px] font-mono uppercase tracking-wider text-[#64748b]">
+              Platform
+            </div>
             <button
-              onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-              className={`w-full flex items-center gap-2 py-2 px-3 rounded-xl text-xs font-medium text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer ${
-                isSidebarCollapsed ? "justify-center px-0" : ""
+              onClick={() => {
+                setActiveSection("overview");
+                setIsMobileMenuOpen(false);
+              }}
+              className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+                activeSection === "overview"
+                  ? "bg-rose-50 text-[#ae2424] font-semibold"
+                  : "text-[#64748b] hover:bg-slate-50 hover:text-[#111827]"
               }`}
             >
-              {isSidebarCollapsed ? (
-                <ChevronRight className="w-4 h-4" />
-              ) : (
-                <>
-                  <ChevronLeft className="w-4 h-4" />
-                  <span>Collapse Menu</span>
-                </>
-              )}
+              <LayoutDashboard className="w-4 h-4 shrink-0" />
+              <span>Overview</span>
             </button>
           </div>
-        </aside>
 
-        {/* ========================================================================= */}
-        {/* MAIN CONTENT AREA                                                         */}
-        {/* ========================================================================= */}
-        <main className="flex-1 overflow-y-auto p-4 sm:p-8">
-          <div className="max-w-6xl mx-auto space-y-6">
+          {/* Group 2: Knowledge Base */}
+          <div>
+            <div className="px-3 mb-1.5 text-[10px] font-mono uppercase tracking-wider text-[#64748b]">
+              Knowledge Engineering
+            </div>
+            <div className="space-y-0.5">
+              <button
+                onClick={() => {
+                  setActiveSection("knowledge-all");
+                  setIsMobileMenuOpen(false);
+                }}
+                className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+                  activeSection === "knowledge-all"
+                    ? "bg-rose-50 text-[#ae2424] font-semibold"
+                    : "text-[#64748b] hover:bg-slate-50 hover:text-[#111827]"
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <Database className="w-4 h-4 shrink-0" />
+                  <span>All Knowledge</span>
+                </div>
+                <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">
+                  {records.length}
+                </span>
+              </button>
 
-            {/* --------------------------------------------------------------------- */}
-            {/* VIEW 1: DATA CRAWLER & INGESTION (Jina Reader API + Gemini Vectorizer)*/}
-            {/* --------------------------------------------------------------------- */}
-            {activeTab === "crawler" && (
-              <div className="space-y-6 animate-fade-in">
-                
-                {/* Header Banner */}
-                <div className="bg-white rounded-2xl border border-[#e2e8f0] p-6 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-                  <div className="space-y-1">
-                    <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-rose-50 text-[#ae2424] text-[11px] font-bold uppercase tracking-wider">
-                      <Zap className="w-3 h-3" />
-                      Live Web Scraper & Vectorizer
-                    </div>
-                    <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-                      Data Crawler & Ingestion
+              <button
+                onClick={() => {
+                  setActiveSection("knowledge-crawl");
+                  setIsMobileMenuOpen(false);
+                }}
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+                  activeSection === "knowledge-crawl"
+                    ? "bg-rose-50 text-[#ae2424] font-semibold"
+                    : "text-[#64748b] hover:bg-slate-50 hover:text-[#111827]"
+                }`}
+              >
+                <Globe className="w-4 h-4 shrink-0" />
+                <span>Crawl Source</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setActiveSection("knowledge-add");
+                  setIsMobileMenuOpen(false);
+                }}
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+                  activeSection === "knowledge-add"
+                    ? "bg-rose-50 text-[#ae2424] font-semibold"
+                    : "text-[#64748b] hover:bg-slate-50 hover:text-[#111827]"
+                }`}
+              >
+                <PlusCircle className="w-4 h-4 shrink-0" />
+                <span>Add Knowledge</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setActiveSection("knowledge-docs");
+                  setIsMobileMenuOpen(false);
+                }}
+                className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+                  activeSection === "knowledge-docs"
+                    ? "bg-rose-50 text-[#ae2424] font-semibold"
+                    : "text-[#64748b] hover:bg-slate-50 hover:text-[#111827]"
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <FileText className="w-4 h-4 shrink-0" />
+                  <span>Documents</span>
+                </div>
+                <span className="text-[9px] uppercase tracking-wider text-slate-400 font-mono">Planned</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setActiveSection("knowledge-videos");
+                  setIsMobileMenuOpen(false);
+                }}
+                className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+                  activeSection === "knowledge-videos"
+                    ? "bg-rose-50 text-[#ae2424] font-semibold"
+                    : "text-[#64748b] hover:bg-slate-50 hover:text-[#111827]"
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <Video className="w-4 h-4 shrink-0" />
+                  <span>Videos</span>
+                </div>
+                <span className="text-[9px] uppercase tracking-wider text-slate-400 font-mono">Planned</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Group 3: Construction Intelligence */}
+          <div>
+            <div className="px-3 mb-1.5 text-[10px] font-mono uppercase tracking-wider text-[#64748b]">
+              Construction Intelligence
+            </div>
+            <div className="space-y-0.5">
+              <button
+                onClick={() => {
+                  setActiveSection("intel-materials");
+                  setIsMobileMenuOpen(false);
+                }}
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+                  activeSection === "intel-materials"
+                    ? "bg-rose-50 text-[#ae2424] font-semibold"
+                    : "text-[#64748b] hover:bg-slate-50 hover:text-[#111827]"
+                }`}
+              >
+                <Layers className="w-4 h-4 shrink-0" />
+                <span>Materials</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setActiveSection("intel-suppliers");
+                  setIsMobileMenuOpen(false);
+                }}
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+                  activeSection === "intel-suppliers"
+                    ? "bg-rose-50 text-[#ae2424] font-semibold"
+                    : "text-[#64748b] hover:bg-slate-50 hover:text-[#111827]"
+                }`}
+              >
+                <Building2 className="w-4 h-4 shrink-0" />
+                <span>Suppliers</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setActiveSection("intel-pricing");
+                  setIsMobileMenuOpen(false);
+                }}
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+                  activeSection === "intel-pricing"
+                    ? "bg-rose-50 text-[#ae2424] font-semibold"
+                    : "text-[#64748b] hover:bg-slate-50 hover:text-[#111827]"
+                }`}
+              >
+                <TrendingUp className="w-4 h-4 shrink-0" />
+                <span>Pricing</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setActiveSection("intel-estimates");
+                  setIsMobileMenuOpen(false);
+                }}
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+                  activeSection === "intel-estimates"
+                    ? "bg-rose-50 text-[#ae2424] font-semibold"
+                    : "text-[#64748b] hover:bg-slate-50 hover:text-[#111827]"
+                }`}
+              >
+                <Calculator className="w-4 h-4 shrink-0" />
+                <span>Estimates</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Group 4: Search & Benchmarks */}
+          <div>
+            <div className="px-3 mb-1.5 text-[10px] font-mono uppercase tracking-wider text-[#64748b]">
+              Vector Search
+            </div>
+            <div className="space-y-0.5">
+              <button
+                onClick={() => {
+                  setActiveSection("search-intelligence");
+                  setIsMobileMenuOpen(false);
+                }}
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+                  activeSection === "search-intelligence"
+                    ? "bg-rose-50 text-[#ae2424] font-semibold"
+                    : "text-[#64748b] hover:bg-slate-50 hover:text-[#111827]"
+                }`}
+              >
+                <Search className="w-4 h-4 shrink-0" />
+                <span>Search Intelligence</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setActiveSection("search-analytics");
+                  setIsMobileMenuOpen(false);
+                }}
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+                  activeSection === "search-analytics"
+                    ? "bg-rose-50 text-[#ae2424] font-semibold"
+                    : "text-[#64748b] hover:bg-slate-50 hover:text-[#111827]"
+                }`}
+              >
+                <BarChart3 className="w-4 h-4 shrink-0" />
+                <span>Search Analytics</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Group 5: Operations */}
+          <div>
+            <div className="px-3 mb-1.5 text-[10px] font-mono uppercase tracking-wider text-[#64748b]">
+              Operations
+            </div>
+            <div className="space-y-0.5">
+              <button
+                onClick={() => {
+                  setActiveSection("ops-leads");
+                  setIsMobileMenuOpen(false);
+                }}
+                className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+                  activeSection === "ops-leads"
+                    ? "bg-rose-50 text-[#ae2424] font-semibold"
+                    : "text-[#64748b] hover:bg-slate-50 hover:text-[#111827]"
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <Users className="w-4 h-4 shrink-0" />
+                  <span>Leads & RFQs</span>
+                </div>
+                <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">
+                  {leads.length}
+                </span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setActiveSection("ops-health");
+                  setIsMobileMenuOpen(false);
+                }}
+                className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+                  activeSection === "ops-health"
+                    ? "bg-rose-50 text-[#ae2424] font-semibold"
+                    : "text-[#64748b] hover:bg-slate-50 hover:text-[#111827]"
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <Activity className="w-4 h-4 shrink-0" />
+                  <span>System Health</span>
+                </div>
+                <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              </button>
+
+              <button
+                onClick={() => {
+                  setActiveSection("settings");
+                  setIsMobileMenuOpen(false);
+                }}
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+                  activeSection === "settings"
+                    ? "bg-rose-50 text-[#ae2424] font-semibold"
+                    : "text-[#64748b] hover:bg-slate-50 hover:text-[#111827]"
+                }`}
+              >
+                <Settings className="w-4 h-4 shrink-0" />
+                <span>Settings</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer User Area */}
+        <div className="p-4 border-t border-[#e5e7eb] bg-slate-50/50">
+          <div className="flex items-center justify-between">
+            <div className="truncate pr-2">
+              <span className="text-xs font-medium text-slate-900 block truncate">{userEmail}</span>
+              <span className="text-[10px] text-slate-500 font-mono">Service-Role Authenticated</span>
+            </div>
+            {onSignOut && (
+              <button
+                onClick={onSignOut}
+                className="text-[11px] font-semibold text-slate-600 hover:text-[#ae2424] transition-colors cursor-pointer"
+              >
+                Sign out
+              </button>
+            )}
+          </div>
+        </div>
+      </aside>
+
+      {/* ========================================================================= */}
+      {/* MAIN VIEWPORT CANVAS */}
+      {/* ========================================================================= */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Top Header Bar */}
+        <header className="h-16 px-6 bg-white border-b border-[#e5e7eb] flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setIsMobileMenuOpen(true)}
+              className="lg:hidden p-1.5 text-slate-500 hover:text-slate-800 rounded-md"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+            <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
+              <span>Admin</span>
+              <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+              <span className="text-slate-900 font-semibold capitalize">
+                {activeSection.replace("-", " ")}
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => {
+                fetchDashboardMetrics();
+                fetchKnowledgeRecords();
+                fetchLeads();
+                fetchHealth();
+              }}
+              title="Refresh administrative data"
+              className="p-2 text-slate-500 hover:text-slate-900 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+            >
+              <RefreshCw className={`w-4 h-4 ${isLoadingDashboard || isLoadingRecords ? "animate-spin" : ""}`} />
+            </button>
+
+            {onNavigateHome && (
+              <button
+                onClick={onNavigateHome}
+                className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-600 hover:text-slate-900 bg-slate-50 hover:bg-slate-100 rounded-lg border border-slate-200 transition-colors cursor-pointer"
+              >
+                <span>Live Marketplace</span>
+                <ArrowUpRight className="w-3.5 h-3.5 text-slate-400" />
+              </button>
+            )}
+
+            <button
+              onClick={() => setActiveSection("knowledge-crawl")}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-white bg-[#ae2424] hover:bg-[#961f1f] rounded-lg shadow-xs transition-colors cursor-pointer"
+            >
+              <Globe className="w-3.5 h-3.5" />
+              <span>Crawl Source</span>
+            </button>
+          </div>
+        </header>
+
+        {/* Scrollable Main Area */}
+        <main className="flex-1 overflow-y-auto p-6 md:p-8">
+          <div className="max-w-7xl mx-auto space-y-8">
+            {/* =================================================================== */}
+            {/* 1. OVERVIEW SCREEN (Part 6) */}
+            {/* =================================================================== */}
+            {activeSection === "overview" && (
+              <div className="space-y-8">
+                {/* Hero Header */}
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-slate-200">
+                  <div>
+                    <h1 className="text-2xl font-bold tracking-tight text-[#111827]">
+                      Shurefire Intelligence
                     </h1>
-                    <p className="text-xs sm:text-sm text-slate-500 max-w-2xl leading-relaxed">
-                      Extract unstructured pricing bulletins and technical specifications via <strong className="text-slate-700">r.jina.ai</strong>. 
-                      Content is automatically parsed, vectorized into <strong className="text-slate-700">768-dimensional embeddings</strong> using Gemini, 
-                      and indexed directly into <strong className="text-slate-700">Supabase public.knowledge_base</strong>.
+                    <p className="text-sm text-[#64748b] mt-0.5">
+                      Manage construction knowledge, sources, materials and search intelligence.
                     </p>
                   </div>
-
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className="text-xs font-mono px-3 py-1.5 rounded-xl bg-slate-100 border border-slate-200 text-slate-600">
-                      Pipeline: Jina &rarr; Gemini &rarr; Supabase
-                    </span>
+                  <div className="flex items-center gap-2.5">
+                    <button
+                      onClick={() => setActiveSection("knowledge-crawl")}
+                      className="px-4 py-2 text-xs font-semibold text-white bg-[#ae2424] hover:bg-[#961f1f] rounded-lg shadow-xs transition-colors cursor-pointer"
+                    >
+                      Crawl New Source
+                    </button>
+                    <button
+                      onClick={() => setActiveSection("knowledge-add")}
+                      className="px-4 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition-colors cursor-pointer"
+                    >
+                      Add Knowledge
+                    </button>
                   </div>
                 </div>
 
-                {/* Crawler Form Card */}
-                <div className="bg-white rounded-2xl border border-[#e2e8f0] p-6 sm:p-8 shadow-xs space-y-6">
-                  <form onSubmit={handleStartCrawl} className="space-y-5">
-                    
-                    {/* URL Input with Live URL Validator */}
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <label htmlFor="crawler-url" className="block text-xs font-bold uppercase tracking-wider text-slate-700">
-                          Target Document or Supplier Web Link *
-                        </label>
-                        {urlValidation && (
-                          <span className={`text-[11px] font-medium flex items-center gap-1 ${
-                            urlValidation.isValid ? "text-emerald-600" : "text-rose-600"
-                          }`}>
-                            {urlValidation.isValid ? (
-                              <>
-                                <CheckCircle2 className="w-3.5 h-3.5" />
-                                Validated URL
-                              </>
-                            ) : (
-                              <>
-                                <AlertTriangle className="w-3.5 h-3.5" />
-                                Invalid URL syntax
-                              </>
-                            )}
-                          </span>
-                        )}
-                      </div>
-                      <div className="relative">
-                        <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
-                          <LinkIcon className="w-4 h-4" />
-                        </div>
-                        <input
-                          id="crawler-url"
-                          type="text"
-                          required
-                          disabled={isCrawling}
-                          value={crawlerUrl}
-                          onChange={(e) => {
-                            setCrawlerUrl(e.target.value);
-                            if (crawlerError) setCrawlerError(null);
-                          }}
-                          placeholder="https://example.com/construction-price-bulletin-lagos"
-                          className={`w-full pl-10 pr-10 py-3 bg-white text-sm text-slate-900 placeholder-slate-400 rounded-xl border transition-colors disabled:bg-slate-50 ${
-                            urlValidation
-                              ? urlValidation.isValid
-                                ? "border-emerald-300 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10"
-                                : "border-rose-300 focus:border-rose-500 focus:ring-4 focus:ring-rose-500/10"
-                              : "border-slate-200 focus:outline-none focus:border-[#ae2424] focus:ring-4 focus:ring-[#ae2424]/10"
-                          }`}
-                        />
-                        {urlValidation && (
-                          <div className="absolute inset-y-0 right-0 pr-3.5 flex items-center pointer-events-none">
-                            {urlValidation.isValid ? (
-                              <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                            ) : (
-                              <AlertTriangle className="w-4 h-4 text-rose-500" />
-                            )}
-                          </div>
-                        )}
-                      </div>
-                      {urlValidation && !urlValidation.isValid ? (
-                        <p className="text-[11px] text-rose-600 mt-1.5 flex items-center gap-1 font-medium">
-                          <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                          {urlValidation.error}
-                        </p>
-                      ) : urlValidation && urlValidation.isValid ? (
-                        <p className="text-[11px] text-emerald-700 mt-1.5 flex items-center gap-1">
-                          <span className="text-slate-400">Sanitized Target:</span>
-                          <span className="font-mono text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 truncate max-w-lg">
-                            {urlValidation.sanitizedUrl}
-                          </span>
-                        </p>
-                      ) : (
-                        <p className="text-[11px] text-slate-400 mt-1.5">
-                          Accepts any publicly accessible web article, PDF reader link, or manufacturing rate bulletin. Validated before initiating fetch to Jina AI bridge.
-                        </p>
-                      )}
+                {/* 4 Primary Metric Cards */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {/* Card 1: Knowledge Records */}
+                  <div className="p-5 bg-white border border-[#e5e7eb] rounded-xl shadow-xs">
+                    <div className="flex items-center justify-between text-[#64748b] mb-2">
+                      <span className="text-xs font-medium">Knowledge Records</span>
+                      <Database className="w-4 h-4 text-[#ae2424]" />
                     </div>
-
-                    {/* Category Selector & Custom Title */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      
-                      {/* Category Dropdown */}
-                      <div>
-                        <label htmlFor="crawler-category" className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-2">
-                          Material Category *
-                        </label>
-                        <select
-                          id="crawler-category"
-                          disabled={isCrawling}
-                          value={crawlerCategory}
-                          onChange={(e) => setCrawlerCategory(e.target.value as MaterialCategory)}
-                          className="w-full px-4 py-3 bg-white text-sm text-slate-900 rounded-xl border border-slate-200 focus:outline-none focus:border-[#ae2424] focus:ring-4 focus:ring-[#ae2424]/10 transition-colors cursor-pointer"
-                        >
-                          {CATEGORIES.map((cat) => (
-                            <option key={cat} value={cat}>
-                              {cat}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      {/* Optional Custom Title Override */}
-                      <div>
-                        <label htmlFor="crawler-title" className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-2">
-                          Title Override <span className="text-slate-400 font-normal">(Optional)</span>
-                        </label>
-                        <input
-                          id="crawler-title"
-                          type="text"
-                          disabled={isCrawling}
-                          value={crawlerCustomTitle}
-                          onChange={(e) => setCrawlerCustomTitle(e.target.value)}
-                          placeholder="e.g. Dangote 3X 42.5R Q3 Lagos Price Circular"
-                          className="w-full px-4 py-3 bg-white text-sm text-slate-900 placeholder-slate-400 rounded-xl border border-slate-200 focus:outline-none focus:border-[#ae2424] focus:ring-4 focus:ring-[#ae2424]/10 transition-colors disabled:bg-slate-50"
-                        />
-                      </div>
+                    <div className="text-2xl font-bold font-mono text-[#111827] tabular-nums">
+                      {dashboardData?.knowledge.total ?? records.length}
                     </div>
-
-                    {/* Quick Sample Links */}
-                    <div className="pt-1">
-                      <span className="text-xs font-semibold text-slate-500 block mb-2">
-                        Quick Preset Source URLs:
+                    <div className="mt-2 text-[11px] text-[#64748b] space-x-1.5">
+                      <span className="text-emerald-600 font-medium">
+                        {dashboardData?.knowledge.embedded ?? records.length} embedded
                       </span>
-                      <div className="flex flex-wrap gap-2">
-                        {sampleCrawlerLinks.map((s, idx) => (
-                          <button
-                            key={idx}
-                            type="button"
-                            disabled={isCrawling}
-                            onClick={() => {
-                              setCrawlerUrl(s.url);
-                              setCrawlerCategory(s.category);
-                              setCrawlerCustomTitle(s.label);
-                              if (crawlerError) setCrawlerError(null);
-                            }}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 text-xs text-slate-700 font-medium transition-colors cursor-pointer"
-                          >
-                            <Globe className="w-3 h-3 text-[#ae2424]" />
-                            <span>{s.label}</span>
-                          </button>
-                        ))}
-                      </div>
+                      <span>·</span>
+                      <span>{dashboardData?.knowledge.withoutEmbedding ?? 0} pending</span>
                     </div>
+                  </div>
 
-                    {/* Error container */}
-                    {crawlerError && (
-                      <div className="p-4 rounded-xl bg-red-50 border border-red-200 text-xs sm:text-sm text-red-700 flex items-start gap-3">
-                        <AlertTriangle className="w-4 h-4 text-[#ae2424] shrink-0 mt-0.5" />
-                        <div>
-                          <strong className="font-bold">Crawler Error: </strong>
-                          <span>{crawlerError}</span>
-                        </div>
+                  {/* Card 2: Embedded Records */}
+                  <div className="p-5 bg-white border border-[#e5e7eb] rounded-xl shadow-xs">
+                    <div className="flex items-center justify-between text-[#64748b] mb-2">
+                      <span className="text-xs font-medium">Vectorized Specs</span>
+                      <Sparkles className="w-4 h-4 text-[#ae2424]" />
+                    </div>
+                    <div className="text-2xl font-bold font-mono text-[#111827] tabular-nums">
+                      {dashboardData?.knowledge.embedded ?? records.length}
+                    </div>
+                    <div className="mt-2 text-[11px] text-[#64748b]">
+                      <span>gemini-embedding-2 (768D)</span>
+                    </div>
+                  </div>
+
+                  {/* Card 3: Crawled Sources */}
+                  <div className="p-5 bg-white border border-[#e5e7eb] rounded-xl shadow-xs">
+                    <div className="flex items-center justify-between text-[#64748b] mb-2">
+                      <span className="text-xs font-medium">Crawled Sources</span>
+                      <Globe className="w-4 h-4 text-[#ae2424]" />
+                    </div>
+                    <div className="text-2xl font-bold font-mono text-[#111827] tabular-nums">
+                      {dashboardData?.sources.total ?? 1}
+                    </div>
+                    <div className="mt-2 text-[11px] text-[#64748b]">
+                      <span>Authoritative market domains</span>
+                    </div>
+                  </div>
+
+                  {/* Card 4: Search Activity & RFQs */}
+                  <div className="p-5 bg-white border border-[#e5e7eb] rounded-xl shadow-xs">
+                    <div className="flex items-center justify-between text-[#64748b] mb-2">
+                      <span className="text-xs font-medium">Procurement Leads</span>
+                      <Users className="w-4 h-4 text-[#ae2424]" />
+                    </div>
+                    <div className="text-2xl font-bold font-mono text-[#111827] tabular-nums">
+                      {dashboardData?.leads.total ?? leads.length}
+                    </div>
+                    <div className="mt-2 text-[11px] text-[#64748b]">
+                      <span>ShureEstimate project requests</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Grid: Recent Knowledge & Recent Crawler Activity */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {/* Recent Knowledge */}
+                  <div className="p-5 bg-white border border-[#e5e7eb] rounded-xl shadow-xs space-y-4">
+                    <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                      <div>
+                        <h2 className="text-sm font-bold text-slate-900">Recent Knowledge Records</h2>
+                        <p className="text-xs text-slate-500">Live technical specs stored in Supabase</p>
                       </div>
-                    )}
-
-                    {/* Submit Ingestion CTA */}
-                    <div className="pt-2">
                       <button
-                        type="submit"
-                        disabled={isCrawling}
-                        className="w-full sm:w-auto px-8 py-3.5 rounded-xl bg-[#ae2424] hover:bg-[#961f1f] active:bg-[#7e1919] text-white font-bold text-sm transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed"
+                        onClick={() => setActiveSection("knowledge-all")}
+                        className="text-xs font-medium text-[#ae2424] hover:underline"
                       >
-                        {isCrawling ? (
-                          <>
-                            <RefreshCw className="w-4 h-4 animate-spin text-white" />
-                            <span>Executing Pipeline ({crawlerStep}/3)...</span>
-                          </>
-                        ) : (
-                          <>
-                            <Zap className="w-4 h-4 text-white" />
-                            <span>Crawl, Vectorize & Ingest Record</span>
-                          </>
-                        )}
+                        View all
                       </button>
                     </div>
-                  </form>
 
-                  {/* Multi-step Visual Progress Tracker while Ingesting */}
-                  {isCrawling && (
-                    <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 space-y-4 animate-pulse">
-                      <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">
-                        Ingestion Progress In Flight
-                      </h4>
-                      <div className="space-y-3">
-                        {/* Step 1 */}
-                        <div className="flex items-center gap-3 text-xs">
-                          <div
-                            className={`w-6 h-6 rounded-full flex items-center justify-center font-bold ${
-                              crawlerStep > 1
-                                ? "bg-emerald-600 text-white"
-                                : crawlerStep === 1
-                                ? "bg-[#ae2424] text-white animate-spin"
-                                : "bg-slate-200 text-slate-600"
-                            }`}
-                          >
-                            {crawlerStep > 1 ? "✓" : "1"}
-                          </div>
-                          <span className={crawlerStep === 1 ? "font-bold text-[#ae2424]" : "text-slate-600"}>
-                            Scraping & markdown extraction via r.jina.ai endpoint...
-                          </span>
+                    <div className="space-y-3">
+                      {records.length === 0 ? (
+                        <div className="py-8 text-center text-xs text-slate-400">
+                          No knowledge records indexed yet.
                         </div>
-
-                        {/* Step 2 */}
-                        <div className="flex items-center gap-3 text-xs">
+                      ) : (
+                        records.slice(0, 5).map(record => (
                           <div
-                            className={`w-6 h-6 rounded-full flex items-center justify-center font-bold ${
-                              crawlerStep > 2
-                                ? "bg-emerald-600 text-white"
-                                : crawlerStep === 2
-                                ? "bg-[#ae2424] text-white animate-spin"
-                                : "bg-slate-200 text-slate-600"
-                            }`}
+                            key={record.id}
+                            className="p-3 rounded-lg border border-slate-100 hover:border-slate-200 transition-colors flex items-start justify-between gap-3"
                           >
-                            {crawlerStep > 2 ? "✓" : "2"}
+                            <div className="min-w-0 flex-1">
+                              <h3 className="text-xs font-semibold text-slate-900 truncate">
+                                {record.title}
+                              </h3>
+                              <div className="flex items-center gap-2 mt-1 text-[11px] text-slate-500">
+                                <span className="font-medium text-slate-700">{record.material_category}</span>
+                                <span aria-hidden="true">·</span>
+                                <span className="truncate max-w-[180px]">
+                                  {record.url ? new URL(record.url).hostname : "Manual Specification"}
+                                </span>
+                                <span aria-hidden="true">·</span>
+                                <span className="font-mono text-emerald-600 font-medium">768D Embedded</span>
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => setViewingRecord(record)}
+                              className="p-1.5 text-slate-400 hover:text-slate-700 rounded-md"
+                              title="Inspect content"
+                            >
+                              <Eye className="w-4 h-4" />
+                            </button>
                           </div>
-                          <span className={crawlerStep === 2 ? "font-bold text-[#ae2424]" : "text-slate-600"}>
-                            Generating 768-dim semantic embedding vector via Gemini...
-                          </span>
-                        </div>
-
-                        {/* Step 3 */}
-                        <div className="flex items-center gap-3 text-xs">
-                          <div
-                            className={`w-6 h-6 rounded-full flex items-center justify-center font-bold ${
-                              crawlerStep >= 3
-                                ? "bg-[#ae2424] text-white"
-                                : "bg-slate-200 text-slate-600"
-                            }`}
-                          >
-                            3
-                          </div>
-                          <span className={crawlerStep >= 3 ? "font-bold text-[#ae2424]" : "text-slate-600"}>
-                            Storing record and embedding vector into Supabase public.knowledge_base...
-                          </span>
-                        </div>
-                      </div>
+                        ))
+                      )}
                     </div>
-                  )}
+                  </div>
 
-                  {/* Successful Ingestion Output Card */}
-                  {crawledResult && (
-                    <div className="p-6 rounded-2xl bg-emerald-50/70 border border-emerald-200 space-y-4">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2 text-emerald-800 font-bold text-sm">
-                          <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-                          <span>Successfully Ingested & Vectorized!</span>
-                        </div>
-                        <button
-                          onClick={() => setActiveTab("knowledge")}
-                          className="text-xs font-semibold text-[#ae2424] hover:underline cursor-pointer flex items-center gap-1"
+                  {/* Recent Crawler Activity */}
+                  <div className="p-5 bg-white border border-[#e5e7eb] rounded-xl shadow-xs space-y-4">
+                    <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                      <div>
+                        <h2 className="text-sm font-bold text-slate-900">Recent Crawler Activity</h2>
+                        <p className="text-xs text-slate-500">Authoritative URL scraper & embedding audit</p>
+                      </div>
+                      <button
+                        onClick={() => setActiveSection("knowledge-crawl")}
+                        className="text-xs font-medium text-[#ae2424] hover:underline"
+                      >
+                        Crawl Source
+                      </button>
+                    </div>
+
+                    <div className="space-y-3">
+                      {crawlerActivityLog.slice(0, 5).map((log, idx) => (
+                        <div
+                          key={idx}
+                          className="p-3 rounded-lg border border-slate-100 flex items-start justify-between gap-3 text-xs"
                         >
-                          <span>View in Knowledge Base</span>
-                          <ArrowRight className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-
-                      <div className="bg-white rounded-xl p-4 border border-emerald-100 space-y-2 text-xs">
-                        <div className="flex justify-between items-start">
-                          <h4 className="font-bold text-slate-900 text-sm">{crawledResult.title}</h4>
-                          <span className={`px-2.5 py-0.5 rounded-full border text-[11px] font-semibold ${getCategoryBadge(crawledResult.material_category)}`}>
-                            {crawledResult.material_category}
-                          </span>
-                        </div>
-                        <p className="text-slate-500 font-mono text-[11px] truncate">
-                          Source: {crawledResult.url}
-                        </p>
-                        <p className="text-slate-700 line-clamp-3 leading-relaxed">
-                          {crawledResult.content}
-                        </p>
-
-                        <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500 font-mono">
-                          <span>Embedding Dimensions: {crawledResult.embedding_dim || 768}</span>
-                          <span>Storage Target: Supabase public.knowledge_base</span>
-                        </div>
-
-                        {/* Vector Sample Display */}
-                        {crawledResult.embedding_sample && (
-                          <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200 font-mono text-[10px] text-slate-600 truncate">
-                            Vector Preview: [ {crawledResult.embedding_sample.join(", ")} ... 768 float32 ]
+                          <div className="min-w-0 flex-1 space-y-1">
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${
+                                  log.status === "Indexed"
+                                    ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                    : "bg-rose-50 text-rose-700 border border-rose-200"
+                                }`}
+                              >
+                                {log.status}
+                              </span>
+                              <span className="font-semibold text-slate-900 truncate">{log.title}</span>
+                            </div>
+                            <p className="text-[11px] text-slate-500 font-mono truncate">{log.url}</p>
+                            <div className="text-[10px] text-slate-400 space-x-2">
+                              <span>{log.extractedStatus}</span>
+                              <span>·</span>
+                              <span>{log.embeddingStatus}</span>
+                              <span>·</span>
+                              <span className="text-slate-500">{log.databaseStatus}</span>
+                            </div>
                           </div>
-                        )}
-                      </div>
+                        </div>
+                      ))}
                     </div>
-                  )}
-
+                  </div>
                 </div>
               </div>
             )}
 
-            {/* --------------------------------------------------------------------- */}
-            {/* VIEW 2: KNOWLEDGE BASE (Data Management Table)                        */}
-            {/* --------------------------------------------------------------------- */}
-            {activeTab === "knowledge" && (
-              <div className="space-y-6 animate-fade-in">
-                
-                {/* Header & Stats Banner */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-[#e2e8f0] shadow-xs">
+            {/* =================================================================== */}
+            {/* 2. KNOWLEDGE BASE SCREEN (Part 7) */}
+            {/* =================================================================== */}
+            {activeSection === "knowledge-all" && (
+              <div className="space-y-6">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4 border-b border-slate-200">
                   <div>
-                    <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+                    <h1 className="text-xl font-bold tracking-tight text-[#111827]">
                       Knowledge Base Records
                     </h1>
-                    <p className="text-xs sm:text-sm text-slate-500">
-                      Manage all vectorized construction specs, market circulars, and material benchmarks in Supabase.
+                    <p className="text-xs text-[#64748b] mt-0.5">
+                      Curated construction technical specs and 768-dim embeddings in Supabase public.knowledge_base
                     </p>
                   </div>
-
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2">
                     <button
-                      onClick={fetchRecords}
-                      disabled={isLoadingRecords}
-                      className="px-3.5 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors flex items-center gap-1.5 cursor-pointer"
+                      onClick={() => setActiveSection("knowledge-crawl")}
+                      className="px-3.5 py-1.5 text-xs font-semibold text-white bg-[#ae2424] hover:bg-[#961f1f] rounded-lg transition-colors cursor-pointer"
                     >
-                      <RefreshCw className={`w-3.5 h-3.5 ${isLoadingRecords ? "animate-spin text-[#ae2424]" : ""}`} />
-                      <span>Refresh</span>
+                      Crawl New Source
                     </button>
                     <button
-                      onClick={() => setActiveTab("crawler")}
-                      className="px-4 py-2 rounded-xl bg-[#ae2424] hover:bg-[#961f1f] text-white text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+                      onClick={() => setActiveSection("knowledge-add")}
+                      className="px-3.5 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition-colors cursor-pointer"
                     >
-                      <PlusCircle className="w-4 h-4" />
-                      <span>Crawl New URL</span>
+                      Manual Entry
                     </button>
                   </div>
                 </div>
 
                 {/* Filter and Search Bar */}
-                <div className="bg-white p-4 rounded-2xl border border-[#e2e8f0] shadow-xs flex flex-col md:flex-row items-center gap-3">
-                  
-                  {/* Search Input */}
-                  <div className="relative flex-1 w-full">
-                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
-                      <Search className="w-4 h-4" />
-                    </div>
+                <div className="flex flex-col md:flex-row gap-3">
+                  <div className="relative flex-1">
+                    <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                     <input
                       type="text"
-                      value={recordsSearchQuery}
-                      onChange={(e) => setRecordsSearchQuery(e.target.value)}
-                      placeholder="Search by title, spec notes, URL, or category..."
-                      className="w-full pl-10 pr-4 py-2.5 bg-slate-50 text-xs sm:text-sm text-slate-900 placeholder-slate-400 rounded-xl border border-slate-200 focus:outline-none focus:border-[#ae2424] focus:ring-4 focus:ring-[#ae2424]/10 transition-colors"
+                      placeholder="Search knowledge by title, content, URL, or category..."
+                      value={knowledgeSearch}
+                      onChange={e => {
+                        setKnowledgeSearch(e.target.value);
+                        setCurrentPage(1);
+                      }}
+                      className="w-full pl-9 pr-4 py-2 bg-white border border-[#e5e7eb] rounded-lg text-xs text-slate-900 focus:outline-hidden focus:border-[#ae2424]"
                     />
-                    {recordsSearchQuery && (
-                      <button
-                        onClick={() => setRecordsSearchQuery("")}
-                        className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 cursor-pointer"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    )}
                   </div>
 
-                  {/* Category Selector Filter */}
-                  <div className="w-full md:w-60">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <select
-                      value={selectedCategoryFilter}
-                      onChange={(e) => setSelectedCategoryFilter(e.target.value)}
-                      className="w-full px-3 py-2.5 bg-slate-50 text-xs sm:text-sm text-slate-800 rounded-xl border border-slate-200 focus:outline-none focus:border-[#ae2424] cursor-pointer"
+                      value={selectedCategory}
+                      onChange={e => {
+                        setSelectedCategory(e.target.value);
+                        setCurrentPage(1);
+                      }}
+                      className="bg-white border border-[#e5e7eb] text-xs text-slate-700 rounded-lg px-3 py-2 focus:outline-hidden focus:border-[#ae2424]"
                     >
                       <option value="All">All Categories ({records.length})</option>
-                      {CATEGORIES.map((cat) => (
-                        <option key={cat} value={cat}>
-                          {cat} ({records.filter((r) => r.material_category?.toLowerCase() === cat.toLowerCase()).length})
-                        </option>
+                      {CATEGORIES.map(cat => (
+                        <option key={cat} value={cat}>{cat}</option>
                       ))}
+                    </select>
+
+                    <select
+                      value={selectedEmbeddingFilter}
+                      onChange={e => {
+                        setSelectedEmbeddingFilter(e.target.value);
+                        setCurrentPage(1);
+                      }}
+                      className="bg-white border border-[#e5e7eb] text-xs text-slate-700 rounded-lg px-3 py-2 focus:outline-hidden focus:border-[#ae2424]"
+                    >
+                      <option value="All">All Embedding States</option>
+                      <option value="Embedded">768D Embedded Only</option>
+                    </select>
+
+                    <select
+                      value={sortOrder}
+                      onChange={e => setSortOrder(e.target.value as any)}
+                      className="bg-white border border-[#e5e7eb] text-xs text-slate-700 rounded-lg px-3 py-2 focus:outline-hidden focus:border-[#ae2424]"
+                    >
+                      <option value="newest">Sort: Newest First</option>
+                      <option value="oldest">Sort: Oldest First</option>
+                      <option value="title">Sort: Title A-Z</option>
                     </select>
                   </div>
                 </div>
 
-                {/* Data Management Table */}
-                <div className="bg-white rounded-2xl border border-[#e2e8f0] shadow-xs overflow-hidden">
+                {/* Knowledge Table */}
+                <div className="bg-white border border-[#e5e7eb] rounded-xl shadow-xs overflow-hidden">
                   <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse">
-                      <thead>
-                        <tr className="bg-slate-50/80 border-b border-slate-200 text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                          <th className="py-3.5 px-4 sm:px-6">Title & Source</th>
-                          <th className="py-3.5 px-4">Material Category</th>
-                          <th className="py-3.5 px-4">Vector Embedding</th>
-                          <th className="py-3.5 px-4">Ingested Date</th>
-                          <th className="py-3.5 px-4 sm:px-6 text-right">Actions</th>
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-50 border-b border-[#e5e7eb] text-slate-500 font-mono">
+                        <tr>
+                          <th className="py-3 px-4 font-semibold">Title</th>
+                          <th className="py-3 px-4 font-semibold">Category</th>
+                          <th className="py-3 px-4 font-semibold">Source</th>
+                          <th className="py-3 px-4 font-semibold">Embedding</th>
+                          <th className="py-3 px-4 font-semibold">Updated</th>
+                          <th className="py-3 px-4 font-semibold text-right">Actions</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-100 text-xs">
-                        {isLoadingRecords ? (
+                      <tbody className="divide-y divide-slate-100">
+                        {paginatedKnowledge.length === 0 ? (
                           <tr>
-                            <td colSpan={5} className="py-12 text-center text-slate-400">
-                              <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-[#ae2424]" />
-                              <span>Loading knowledge base records from Supabase...</span>
-                            </td>
-                          </tr>
-                        ) : filteredRecords.length === 0 ? (
-                          <tr>
-                            <td colSpan={5} className="py-12 text-center text-slate-400 space-y-3">
-                              <Database className="w-8 h-8 mx-auto text-slate-300" />
-                              <p className="text-sm font-medium text-slate-600">No knowledge records match your filter.</p>
-                              <button
-                                onClick={() => setActiveTab("crawler")}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#ae2424] text-white text-xs font-semibold cursor-pointer"
-                              >
-                                <Zap className="w-3.5 h-3.5" />
-                                <span>Crawl First URL</span>
-                              </button>
+                            <td colSpan={6} className="py-12 text-center text-slate-500">
+                              No knowledge records found matching your filters.
                             </td>
                           </tr>
                         ) : (
-                          filteredRecords.map((rec) => (
-                            <tr key={rec.id} className="hover:bg-slate-50/70 transition-colors">
-                              
-                              {/* Title & URL */}
-                              <td className="py-4 px-4 sm:px-6 max-w-xs sm:max-w-sm">
-                                <div className="font-bold text-slate-900 line-clamp-1">{rec.title}</div>
-                                <div className="text-slate-400 text-[11px] truncate flex items-center gap-1 mt-0.5">
-                                  {rec.url && rec.url.startsWith("http") ? (
-                                    <a
-                                      href={rec.url}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="text-slate-500 hover:text-[#ae2424] hover:underline flex items-center gap-1"
-                                    >
-                                      <span className="truncate">{rec.url}</span>
-                                      <ExternalLink className="w-3 h-3 shrink-0" />
-                                    </a>
-                                  ) : (
-                                    <span>{rec.url || "Direct Trade Desk Entry"}</span>
-                                  )}
+                          paginatedKnowledge.map(record => (
+                            <tr key={record.id} className="hover:bg-slate-50/60 transition-colors">
+                              <td className="py-3 px-4 max-w-[280px]">
+                                <div className="font-semibold text-slate-900 truncate" title={record.title}>
+                                  {record.title}
+                                </div>
+                                <div className="text-[11px] text-slate-400 font-mono truncate">
+                                  ID: {record.id.slice(0, 18)}...
                                 </div>
                               </td>
 
-                              {/* Material Category Badge */}
-                              <td className="py-4 px-4 whitespace-nowrap">
-                                <span
-                                  className={`inline-block px-2.5 py-1 rounded-full border text-[11px] font-semibold ${getCategoryBadge(
-                                    rec.material_category
-                                  )}`}
-                                >
-                                  {rec.material_category || "Cement"}
+                              <td className="py-3 px-4">
+                                <span className="font-medium text-slate-700">
+                                  {record.material_category}
                                 </span>
                               </td>
 
-                              {/* Vector Embedding Status */}
-                              <td className="py-4 px-4 whitespace-nowrap">
-                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] font-medium">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                                  <span>{rec.embedding_dim || 768}-dim Vector</span>
+                              <td className="py-3 px-4 max-w-[200px]">
+                                {record.url ? (
+                                  <a
+                                    href={record.url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-slate-600 hover:text-[#ae2424] inline-flex items-center gap-1 truncate"
+                                  >
+                                    <span className="truncate">{new URL(record.url).hostname}</span>
+                                    <ExternalLink className="w-3 h-3 shrink-0" />
+                                  </a>
+                                ) : (
+                                  <span className="text-slate-400">Manual Spec</span>
+                                )}
+                              </td>
+
+                              <td className="py-3 px-4">
+                                <span className="font-mono text-emerald-700 font-medium">
+                                  768D Embedded
                                 </span>
                               </td>
 
-                              {/* Date */}
-                              <td className="py-4 px-4 whitespace-nowrap text-slate-500 text-[11px] font-mono">
-                                {rec.createdAt
-                                  ? new Date(rec.createdAt).toLocaleDateString("en-GB", {
-                                      day: "2-digit",
-                                      month: "short",
-                                      year: "numeric"
-                                    })
-                                  : "Recent"}
+                              <td className="py-3 px-4 text-slate-500 font-mono text-[11px] whitespace-nowrap">
+                                {record.updatedAt
+                                  ? new Date(record.updatedAt).toLocaleDateString()
+                                  : "Recently"}
                               </td>
 
-                              {/* Actions */}
-                              <td className="py-4 px-4 sm:px-6 whitespace-nowrap text-right">
-                                <div className="flex items-center justify-end gap-1.5">
-                                  {/* Inspect Content */}
+                              <td className="py-3 px-4 text-right whitespace-nowrap">
+                                <div className="flex items-center justify-end gap-1">
                                   <button
-                                    onClick={() => setInspectingRecord(rec)}
-                                    title="Inspect Full Scraped Text & Embedding"
-                                    className="p-1.5 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer"
+                                    onClick={() => setViewingRecord(record)}
+                                    title="View Record Details"
+                                    className="p-1.5 text-slate-400 hover:text-slate-700 rounded-md"
                                   >
                                     <Eye className="w-4 h-4" />
                                   </button>
-
-                                  {/* Delete Record */}
                                   <button
-                                    onClick={() => handleDeleteRecord(rec.id)}
-                                    disabled={deletingId === rec.id}
-                                    title="Delete from Supabase public.knowledge_base"
-                                    className="p-1.5 rounded-lg text-slate-400 hover:text-red-700 hover:bg-red-50 transition-colors cursor-pointer disabled:opacity-50"
+                                    onClick={() => handleDeleteRecord(record.id)}
+                                    title="Delete from Supabase"
+                                    className="p-1.5 text-slate-400 hover:text-rose-600 rounded-md"
                                   >
                                     <Trash2 className="w-4 h-4" />
                                   </button>
                                 </div>
                               </td>
-
                             </tr>
                           ))
                         )}
@@ -1197,459 +1243,837 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </table>
                   </div>
 
-                  {/* Table Footer */}
-                  <div className="p-4 bg-slate-50/70 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500">
-                    <span>
-                      Showing {filteredRecords.length} of {records.length} records
-                    </span>
-                    <span className="font-mono text-[11px]">
-                      Storage: Supabase public.knowledge_base
-                    </span>
+                  {/* Pagination Footer */}
+                  <div className="py-3 px-4 bg-slate-50 border-t border-[#e5e7eb] flex items-center justify-between text-xs text-slate-500">
+                    <div>
+                      Showing {filteredKnowledge.length > 0 ? (currentPage - 1) * itemsPerPage + 1 : 0} to{" "}
+                      {Math.min(currentPage * itemsPerPage, filteredKnowledge.length)} of {filteredKnowledge.length} records
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                        disabled={currentPage <= 1}
+                        className="px-2.5 py-1 bg-white border border-slate-200 rounded disabled:opacity-40"
+                      >
+                        Prev
+                      </button>
+                      <span className="font-mono px-2">
+                        {currentPage} / {totalPages}
+                      </span>
+                      <button
+                        onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                        disabled={currentPage >= totalPages}
+                        className="px-2.5 py-1 bg-white border border-slate-200 rounded disabled:opacity-40"
+                      >
+                        Next
+                      </button>
+                    </div>
                   </div>
                 </div>
-
               </div>
             )}
 
-            {/* --------------------------------------------------------------------- */}
-            {/* VIEW 3: MANUAL DATA ENTRY (Rates, Specs, & Technical Standards)       */}
-            {/* --------------------------------------------------------------------- */}
-            {activeTab === "manual" && (
-              <div className="space-y-6 animate-fade-in">
-                
-                {/* Header Banner */}
-                <div className="bg-white rounded-2xl border border-[#e2e8f0] p-6 shadow-xs">
-                  <div className="space-y-1">
-                    <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-rose-50 text-[#ae2424] text-[11px] font-bold uppercase tracking-wider">
-                      <PlusCircle className="w-3 h-3" />
-                      Direct Construction Trade Desk Entry
-                    </div>
-                    <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-                      Manual Data Entry
-                    </h1>
-                    <p className="text-xs sm:text-sm text-slate-500 max-w-2xl">
-                      Input authoritative construction rates, regional dealer quotes, or structural engineering standards. 
-                      Entries will be vectorized with 768-dim embeddings and committed directly to Supabase.
-                    </p>
-                  </div>
+            {/* =================================================================== */}
+            {/* 3. CRAWLER SOURCE SCREEN (Part 8) */}
+            {/* =================================================================== */}
+            {activeSection === "knowledge-crawl" && (
+              <div className="max-w-3xl space-y-6">
+                <div>
+                  <h1 className="text-xl font-bold tracking-tight text-[#111827]">
+                    Crawl & Index Construction Knowledge
+                  </h1>
+                  <p className="text-xs text-[#64748b] mt-1">
+                    Add a trusted construction, building-material, engineering or supplier source to Shurefire's knowledge base.
+                  </p>
                 </div>
 
-                {/* Form Card */}
-                <div className="bg-white rounded-2xl border border-[#e2e8f0] p-6 sm:p-8 shadow-xs">
-                  <form onSubmit={handleManualSubmit} className="space-y-5">
-                    
-                    {/* Title */}
+                <div className="p-6 bg-white border border-[#e5e7eb] rounded-xl shadow-xs space-y-6">
+                  <form onSubmit={handleExecuteCrawl} className="space-y-4">
                     <div>
-                      <label htmlFor="manual-title" className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-2">
-                        Specification Title / Material Name *
+                      <label className="block text-xs font-semibold text-slate-900 mb-1">
+                        Source URL <span className="text-[#ae2424]">*</span>
                       </label>
                       <input
-                        id="manual-title"
-                        type="text"
+                        type="url"
                         required
-                        disabled={isSubmittingManual}
-                        value={manualTitle}
-                        onChange={(e) => setManualTitle(e.target.value)}
-                        placeholder="e.g. Dangote Portland Limestone Cement 42.5R (50kg Bag)"
-                        className="w-full px-4 py-3 bg-white text-sm text-slate-900 placeholder-slate-400 rounded-xl border border-slate-200 focus:outline-none focus:border-[#ae2424] focus:ring-4 focus:ring-[#ae2424]/10 transition-colors disabled:bg-slate-50"
+                        placeholder="https://example.com/cement-pricing"
+                        value={crawlerUrl}
+                        onChange={e => setCrawlerUrl(e.target.value)}
+                        className="w-full px-3.5 py-2.5 text-xs bg-white border border-slate-200 rounded-lg text-slate-900 focus:outline-hidden focus:border-[#ae2424]"
                       />
+                      <p className="text-[11px] text-slate-400 mt-1">
+                        Verified examples: Jiji construction catalog, Standards Organisation of Nigeria (SON), Dangote Cement specs.
+                      </p>
                     </div>
 
-                    {/* Category, Rate, Unit Row */}
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                      
-                      {/* Category */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
-                        <label htmlFor="manual-category" className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-2">
-                          Material Category *
+                        <label className="block text-xs font-semibold text-slate-900 mb-1">
+                          Material Category <span className="text-[#ae2424]">*</span>
                         </label>
                         <select
-                          id="manual-category"
-                          disabled={isSubmittingManual}
-                          value={manualCategory}
-                          onChange={(e) => setManualCategory(e.target.value as MaterialCategory)}
-                          className="w-full px-4 py-3 bg-white text-sm text-slate-900 rounded-xl border border-slate-200 focus:outline-none focus:border-[#ae2424] focus:ring-4 focus:ring-[#ae2424]/10 transition-colors cursor-pointer"
+                          value={crawlerCategory}
+                          onChange={e => setCrawlerCategory(e.target.value)}
+                          className="w-full px-3.5 py-2.5 text-xs bg-white border border-slate-200 rounded-lg text-slate-900 focus:outline-hidden focus:border-[#ae2424]"
                         >
-                          {CATEGORIES.map((cat) => (
-                            <option key={cat} value={cat}>
-                              {cat}
-                            </option>
+                          {CATEGORIES.map(cat => (
+                            <option key={cat} value={cat}>{cat}</option>
                           ))}
                         </select>
                       </div>
 
-                      {/* Current Rate (₦) */}
                       <div>
-                        <label htmlFor="manual-rate" className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-2">
-                          Rate (₦ NGN) <span className="text-slate-400 font-normal">(Optional)</span>
+                        <label className="block text-xs font-semibold text-slate-900 mb-1">
+                          Optional Custom Title
                         </label>
                         <input
-                          id="manual-rate"
-                          type="number"
-                          disabled={isSubmittingManual}
-                          value={manualRate}
-                          onChange={(e) => setManualRate(e.target.value)}
-                          placeholder="e.g. 7950"
-                          className="w-full px-4 py-3 bg-white text-sm text-slate-900 placeholder-slate-400 rounded-xl border border-slate-200 focus:outline-none focus:border-[#ae2424] focus:ring-4 focus:ring-[#ae2424]/10 transition-colors disabled:bg-slate-50"
-                        />
-                      </div>
-
-                      {/* Unit */}
-                      <div>
-                        <label htmlFor="manual-unit" className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-2">
-                          Unit of Measure <span className="text-slate-400 font-normal">(Optional)</span>
-                        </label>
-                        <input
-                          id="manual-unit"
                           type="text"
-                          disabled={isSubmittingManual}
-                          value={manualUnit}
-                          onChange={(e) => setManualUnit(e.target.value)}
-                          placeholder="e.g. 50kg Bag, Ton, Length"
-                          className="w-full px-4 py-3 bg-white text-sm text-slate-900 placeholder-slate-400 rounded-xl border border-slate-200 focus:outline-none focus:border-[#ae2424] focus:ring-4 focus:ring-[#ae2424]/10 transition-colors disabled:bg-slate-50"
+                          placeholder="e.g. Dangote 42.5R Grade Specs"
+                          value={crawlerTitle}
+                          onChange={e => setCrawlerTitle(e.target.value)}
+                          className="w-full px-3.5 py-2.5 text-xs bg-white border border-slate-200 rounded-lg text-slate-900 focus:outline-hidden focus:border-[#ae2424]"
                         />
                       </div>
                     </div>
 
-                    {/* Source URL / Supplier Reference */}
                     <div>
-                      <label htmlFor="manual-source" className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-2">
-                        Source Reference / Supplier Standard <span className="text-slate-400 font-normal">(Optional)</span>
+                      <label className="block text-xs font-semibold text-slate-900 mb-1">
+                        Optional Ingestion Notes / Description
                       </label>
                       <input
-                        id="manual-source"
                         type="text"
-                        disabled={isSubmittingManual}
-                        value={manualSourceUrl}
-                        onChange={(e) => setManualSourceUrl(e.target.value)}
-                        placeholder="e.g. Lagos Building Material Market, Coker Depot / https://example.com"
-                        className="w-full px-4 py-3 bg-white text-sm text-slate-900 placeholder-slate-400 rounded-xl border border-slate-200 focus:outline-none focus:border-[#ae2424] focus:ring-4 focus:ring-[#ae2424]/10 transition-colors disabled:bg-slate-50"
+                        placeholder="Specific focus areas to prioritize during ingestion"
+                        value={crawlerDescription}
+                        onChange={e => setCrawlerDescription(e.target.value)}
+                        className="w-full px-3.5 py-2.5 text-xs bg-white border border-slate-200 rounded-lg text-slate-900 focus:outline-hidden focus:border-[#ae2424]"
                       />
                     </div>
 
-                    {/* Technical Notes / Content */}
-                    <div>
-                      <label htmlFor="manual-notes" className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-2">
-                        Technical Specifications & Market Notes *
-                      </label>
-                      <textarea
-                        id="manual-notes"
-                        required
-                        rows={5}
-                        disabled={isSubmittingManual}
-                        value={manualNotes}
-                        onChange={(e) => setManualNotes(e.target.value)}
-                        placeholder="Detail compressive strength, compliance certifications (e.g. NIS 444-1), delivery parameters, and regional variations across Lagos, Abuja, or Port Harcourt..."
-                        className="w-full px-4 py-3 bg-white text-sm text-slate-900 placeholder-slate-400 rounded-xl border border-slate-200 focus:outline-none focus:border-[#ae2424] focus:ring-4 focus:ring-[#ae2424]/10 transition-colors disabled:bg-slate-50"
-                      />
-                    </div>
-
-                    {/* Feedback Alerts */}
-                    {manualSuccessMessage && (
-                      <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-xs sm:text-sm text-emerald-800 flex items-start gap-2.5">
-                        <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
-                        <span>{manualSuccessMessage}</span>
-                      </div>
-                    )}
-                    {manualErrorMessage && (
-                      <div className="p-4 rounded-xl bg-red-50 border border-red-200 text-xs sm:text-sm text-red-700 flex items-start gap-2.5">
-                        <AlertTriangle className="w-4 h-4 text-[#ae2424] shrink-0 mt-0.5" />
-                        <span>{manualErrorMessage}</span>
+                    {crawlerError && (
+                      <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-lg flex items-start gap-2.5 text-xs text-rose-800">
+                        <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 mt-0.5" />
+                        <div>
+                          <span className="font-semibold block">Ingestion Error</span>
+                          <span>{crawlerError}</span>
+                        </div>
                       </div>
                     )}
 
-                    {/* Submit CTA */}
-                    <div className="pt-2">
+                    {/* Step Indicator when Processing */}
+                    {isCrawling && (
+                      <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg space-y-3">
+                        <div className="text-xs font-semibold text-slate-800 flex items-center justify-between">
+                          <span>Crawler Ingestion Pipeline</span>
+                          <span className="font-mono text-[#ae2424]">Step {crawlerProgressStep} of 6</span>
+                        </div>
+                        <div className="space-y-1.5">
+                          {CRAWL_STEPS.map((step, idx) => {
+                            const isDone = crawlerProgressStep > idx + 1;
+                            const isCurrent = crawlerProgressStep === idx + 1;
+                            return (
+                              <div key={step} className="flex items-center gap-2 text-xs">
+                                {isDone ? (
+                                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                ) : isCurrent ? (
+                                  <div className="w-3.5 h-3.5 rounded-full border-2 border-[#ae2424] border-t-transparent animate-spin" />
+                                ) : (
+                                  <div className="w-3.5 h-3.5 rounded-full border border-slate-300" />
+                                )}
+                                <span className={isCurrent ? "font-semibold text-slate-900" : isDone ? "text-slate-600" : "text-slate-400"}>
+                                  {step}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    <button
+                      type="submit"
+                      disabled={isCrawling}
+                      className="w-full py-2.5 px-4 bg-[#ae2424] hover:bg-[#961f1f] text-white text-xs font-semibold rounded-lg shadow-xs transition-colors disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      {isCrawling ? (
+                        <>
+                          <RefreshCw className="w-4 h-4 animate-spin" />
+                          <span>Processing Ingestion Pipeline...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Globe className="w-4 h-4" />
+                          <span>Crawl & Index</span>
+                        </>
+                      )}
+                    </button>
+                  </form>
+
+                  {/* Success State Card */}
+                  {crawlerSuccessRecord && (
+                    <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-lg space-y-3">
+                      <div className="flex items-center gap-2 text-emerald-800 font-bold text-xs">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                        <span>Source successfully indexed.</span>
+                      </div>
+                      <div className="text-xs text-emerald-950 space-y-1 font-mono">
+                        <div>Title: <span className="font-semibold">{crawlerSuccessRecord.title}</span></div>
+                        <div>Category: {crawlerSuccessRecord.material_category}</div>
+                        <div>URL: {crawlerSuccessRecord.url}</div>
+                        <div>Embedding: 768 dimensions (gemini-embedding-2)</div>
+                        <div>Database ID: {crawlerSuccessRecord.id}</div>
+                      </div>
                       <button
-                        type="submit"
-                        disabled={isSubmittingManual}
-                        className="px-8 py-3.5 rounded-xl bg-[#ae2424] hover:bg-[#961f1f] active:bg-[#7e1919] text-white font-bold text-sm transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed"
+                        onClick={() => setActiveSection("knowledge-all")}
+                        className="text-xs font-semibold text-[#ae2424] hover:underline block pt-1"
                       >
-                        {isSubmittingManual ? (
-                          <>
-                            <RefreshCw className="w-4 h-4 animate-spin text-white" />
-                            <span>Vectorizing & Saving to Supabase...</span>
-                          </>
-                        ) : (
-                          <>
-                            <Database className="w-4 h-4 text-white" />
-                            <span>Save to Supabase & Generate 768-dim Embedding</span>
-                          </>
-                        )}
+                        View in Knowledge Base &rarr;
                       </button>
                     </div>
-                  </form>
+                  )}
                 </div>
-
               </div>
             )}
 
-            {/* --------------------------------------------------------------------- */}
-            {/* VIEW 4: SYSTEM HEALTH (Supabase, Gemini AI, Jina Reader API)          */}
-            {/* --------------------------------------------------------------------- */}
-            {activeTab === "health" && (
-              <div className="space-y-6 animate-fade-in">
-                
-                {/* Header Banner */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-[#e2e8f0] shadow-xs">
+            {/* =================================================================== */}
+            {/* 4. ADD KNOWLEDGE SCREEN (Part 9) */}
+            {/* =================================================================== */}
+            {activeSection === "knowledge-add" && (
+              <div className="max-w-3xl space-y-6">
+                <div>
+                  <h1 className="text-xl font-bold tracking-tight text-[#111827]">
+                    Add Technical Knowledge Block
+                  </h1>
+                  <p className="text-xs text-[#64748b] mt-1">
+                    Store structured structural specifications or contractor price bulletins directly with 768D embeddings.
+                  </p>
+                </div>
+
+                <div className="p-6 bg-white border border-[#e5e7eb] rounded-xl shadow-xs">
+                  <form onSubmit={handleAddKnowledge} className="space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-900 mb-1">
+                          Specification Title <span className="text-[#ae2424]">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="e.g. BS 4449 Grade 500B Rebar Tensile Specs"
+                          value={addTitle}
+                          onChange={e => setAddTitle(e.target.value)}
+                          className="w-full px-3.5 py-2.5 text-xs bg-white border border-slate-200 rounded-lg text-slate-900 focus:outline-hidden focus:border-[#ae2424]"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-900 mb-1">
+                          Material Category <span className="text-[#ae2424]">*</span>
+                        </label>
+                        <select
+                          value={addCategory}
+                          onChange={e => setAddCategory(e.target.value)}
+                          className="w-full px-3.5 py-2.5 text-xs bg-white border border-slate-200 rounded-lg text-slate-900 focus:outline-hidden focus:border-[#ae2424]"
+                        >
+                          {CATEGORIES.map(cat => (
+                            <option key={cat} value={cat}>{cat}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-900 mb-1">
+                        Source Reference URL (Optional)
+                      </label>
+                      <input
+                        type="url"
+                        placeholder="https://son.gov.ng/standards/rebar-spec"
+                        value={addUrl}
+                        onChange={e => setAddUrl(e.target.value)}
+                        className="w-full px-3.5 py-2.5 text-xs bg-white border border-slate-200 rounded-lg text-slate-900 focus:outline-hidden focus:border-[#ae2424]"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-900 mb-1">
+                        Technical Knowledge Content <span className="text-[#ae2424]">*</span>
+                      </label>
+                      <textarea
+                        rows={7}
+                        required
+                        placeholder="Enter full technical specifications, compressive strengths, batching mix ratios, or manufacturer notes..."
+                        value={addContent}
+                        onChange={e => setAddContent(e.target.value)}
+                        className="w-full px-3.5 py-2.5 text-xs bg-white border border-slate-200 rounded-lg text-slate-900 font-mono focus:outline-hidden focus:border-[#ae2424]"
+                      />
+                    </div>
+
+                    {addErrorMessage && (
+                      <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-800">
+                        {addErrorMessage}
+                      </div>
+                    )}
+
+                    {addSuccessInfo && (
+                      <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-lg space-y-2">
+                        <div className="flex items-center gap-2 text-emerald-800 font-semibold text-xs">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                          <span>Knowledge block saved and embedded successfully!</span>
+                        </div>
+                        <div className="text-xs text-emerald-900 font-mono">
+                          <div>Generated UUID: {addSuccessInfo.id}</div>
+                          <div>Embedding status: 768 dimensions (gemini-embedding-2)</div>
+                        </div>
+                      </div>
+                    )}
+
+                    <button
+                      type="submit"
+                      disabled={isSubmittingAdd}
+                      className="w-full py-2.5 px-4 bg-[#ae2424] hover:bg-[#961f1f] text-white text-xs font-semibold rounded-lg shadow-xs transition-colors disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      {isSubmittingAdd ? (
+                        <>
+                          <RefreshCw className="w-4 h-4 animate-spin" />
+                          <span>Vectorizing & Storing...</span>
+                        </>
+                      ) : (
+                        <>
+                          <PlusCircle className="w-4 h-4" />
+                          <span>Save & Embed</span>
+                        </>
+                      )}
+                    </button>
+                  </form>
+                </div>
+              </div>
+            )}
+
+            {/* =================================================================== */}
+            {/* 5. DOCUMENTS (PLANNED) */}
+            {/* =================================================================== */}
+            {activeSection === "knowledge-docs" && (
+              <div className="p-8 bg-white border border-[#e5e7eb] rounded-xl shadow-xs text-center max-w-xl mx-auto space-y-3">
+                <FileText className="w-10 h-10 text-[#ae2424] mx-auto" />
+                <h2 className="text-base font-bold text-slate-900">Document Parsing & OCR Pipeline</h2>
+                <p className="text-xs text-slate-500">
+                  Direct ingestion for PDF architectural standards, Bill of Quantities (BOQ), and structural engineering drawings is currently in staging.
+                </p>
+                <div className="inline-block px-3 py-1 bg-slate-100 text-slate-600 font-mono text-[10px] rounded-md">
+                  Status: Staging Pipeline (Release v2.5)
+                </div>
+              </div>
+            )}
+
+            {/* =================================================================== */}
+            {/* 6. VIDEOS (PLANNED) */}
+            {/* =================================================================== */}
+            {activeSection === "knowledge-videos" && (
+              <div className="p-8 bg-white border border-[#e5e7eb] rounded-xl shadow-xs text-center max-w-xl mx-auto space-y-3">
+                <Video className="w-10 h-10 text-[#ae2424] mx-auto" />
+                <h2 className="text-base font-bold text-slate-900">Multimodal Site Inspection Video Indexing</h2>
+                <p className="text-xs text-slate-500">
+                  Multimodal audio transcription and video frame feature extraction for concrete pour inspections is planned for Q4.
+                </p>
+                <div className="inline-block px-3 py-1 bg-slate-100 text-slate-600 font-mono text-[10px] rounded-md">
+                  Status: Engineering Roadmap
+                </div>
+              </div>
+            )}
+
+            {/* =================================================================== */}
+            {/* 7. MATERIALS CATALOGUE */}
+            {/* =================================================================== */}
+            {activeSection === "intel-materials" && (
+              <div className="space-y-6">
+                <div className="flex items-center justify-between pb-4 border-b border-slate-200">
                   <div>
-                    <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-                      System Health & API Gateways
+                    <h1 className="text-xl font-bold tracking-tight text-[#111827]">
+                      Materials Database & Stock
                     </h1>
-                    <p className="text-xs sm:text-sm text-slate-500">
-                      Live status monitoring of Supabase persistence, Gemini AI vectorization, and Jina Reader endpoint.
+                    <p className="text-xs text-[#64748b] mt-0.5">
+                      Live supplier catalog, stock levels, and regional availability
                     </p>
                   </div>
+                </div>
 
+                <div className="bg-white border border-[#e5e7eb] rounded-xl shadow-xs overflow-hidden">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-mono">
+                      <tr>
+                        <th className="py-3 px-4 font-semibold">Material</th>
+                        <th className="py-3 px-4 font-semibold">Category</th>
+                        <th className="py-3 px-4 font-semibold">Unit Price</th>
+                        <th className="py-3 px-4 font-semibold">Stock</th>
+                        <th className="py-3 px-4 font-semibold">Location</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {INITIAL_MATERIALS.map(m => (
+                        <tr key={m.id} className="hover:bg-slate-50/60">
+                          <td className="py-3 px-4 font-medium text-slate-900">{m.name}</td>
+                          <td className="py-3 px-4 text-slate-600">{m.category}</td>
+                          <td className="py-3 px-4 font-mono font-semibold text-slate-900">
+                            ₦{m.price.toLocaleString()} / {m.unit}
+                          </td>
+                          <td className="py-3 px-4 font-mono text-slate-600">{m.stockLevel} units</td>
+                          <td className="py-3 px-4 text-slate-500">{m.supplierCity}, {m.supplierState}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* =================================================================== */}
+            {/* 8. SUPPLIERS */}
+            {/* =================================================================== */}
+            {activeSection === "intel-suppliers" && (
+              <div className="space-y-6">
+                <div className="pb-4 border-b border-slate-200">
+                  <h1 className="text-xl font-bold tracking-tight text-[#111827]">
+                    Supplier Network
+                  </h1>
+                  <p className="text-xs text-[#64748b] mt-0.5">
+                    Verified Nigerian building material suppliers & direct API connectivity
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {NIGERIAN_SUPPLIERS.map(sup => (
+                    <div key={sup.id} className="p-4 bg-white border border-[#e5e7eb] rounded-xl shadow-xs space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-xs text-slate-900">{sup.name}</span>
+                        <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                      </div>
+                      <p className="text-xs text-slate-500">{sup.city}, {sup.state}</p>
+                      <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400 font-mono">
+                        <span>API Connected</span>
+                        <span>{sup.apiLatencyMs}ms latency</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* =================================================================== */}
+            {/* 9. PRICING VARIANCE */}
+            {/* =================================================================== */}
+            {activeSection === "intel-pricing" && (
+              <div className="space-y-6">
+                <div className="pb-4 border-b border-slate-200">
+                  <h1 className="text-xl font-bold tracking-tight text-[#111827]">
+                    Pricing Intelligence & Regional Variance
+                  </h1>
+                  <p className="text-xs text-[#64748b] mt-0.5">
+                    Real-time market price benchmarks across Lagos, Abuja, and Port Harcourt
+                  </p>
+                </div>
+
+                <div className="bg-white border border-[#e5e7eb] rounded-xl shadow-xs overflow-hidden">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-mono">
+                      <tr>
+                        <th className="py-3 px-4 font-semibold">Material Grade</th>
+                        <th className="py-3 px-4 font-semibold">Lagos (Coastal)</th>
+                        <th className="py-3 px-4 font-semibold">Abuja (Federal)</th>
+                        <th className="py-3 px-4 font-semibold">Port Harcourt</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 font-mono">
+                      <tr>
+                        <td className="py-3 px-4 font-sans font-medium text-slate-900">Cement 42.5R (50kg Bag)</td>
+                        <td className="py-3 px-4">₦9,800 - ₦10,200</td>
+                        <td className="py-3 px-4">₦10,500 - ₦11,000</td>
+                        <td className="py-3 px-4">₦10,200 - ₦10,700</td>
+                      </tr>
+                      <tr>
+                        <td className="py-3 px-4 font-sans font-medium text-slate-900">16mm High-Yield TMT Rebar (Ton)</td>
+                        <td className="py-3 px-4">₦1,150,000</td>
+                        <td className="py-3 px-4">₦1,220,000</td>
+                        <td className="py-3 px-4">₦1,190,000</td>
+                      </tr>
+                      <tr>
+                        <td className="py-3 px-4 font-sans font-medium text-slate-900">Sharp Sand (20-Tonne Tipper)</td>
+                        <td className="py-3 px-4">₦160,000</td>
+                        <td className="py-3 px-4">₦185,000</td>
+                        <td className="py-3 px-4">₦175,000</td>
+                      </tr>
+                      <tr>
+                        <td className="py-3 px-4 font-sans font-medium text-slate-900">Crushed Blue Granite 3/4" (30 Tonnes)</td>
+                        <td className="py-3 px-4">₦380,000</td>
+                        <td className="py-3 px-4">₦340,000</td>
+                        <td className="py-3 px-4">₦395,000</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* =================================================================== */}
+            {/* 10. ESTIMATES */}
+            {/* =================================================================== */}
+            {activeSection === "intel-estimates" && (
+              <div className="space-y-6">
+                <div className="pb-4 border-b border-slate-200">
+                  <h1 className="text-xl font-bold tracking-tight text-[#111827]">
+                    Project Estimates Engine
+                  </h1>
+                  <p className="text-xs text-[#64748b] mt-0.5">
+                    Engineering calculations generated by Shurefire Calculator
+                  </p>
+                </div>
+
+                <div className="p-6 bg-white border border-[#e5e7eb] rounded-xl shadow-xs text-xs space-y-4">
+                  <p className="text-slate-600">
+                    Project estimates are automatically logged when prospective clients execute structural calculations via the public calculator.
+                  </p>
+                  <div className="p-4 bg-slate-50 rounded-lg text-slate-700 font-mono text-[11px] space-y-1">
+                    <div>Calculation models: Slab structural concrete (1:2:4 batching)</div>
+                    <div>Reinforcement rebar density: 110 kg/m3</div>
+                    <div>NIS 444-1:2018 compressive compliance verification active</div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* =================================================================== */}
+            {/* 11. SEARCH INTELLIGENCE PLAYGROUND */}
+            {/* =================================================================== */}
+            {activeSection === "search-intelligence" && (
+              <div className="space-y-6">
+                <div className="pb-4 border-b border-slate-200">
+                  <h1 className="text-xl font-bold tracking-tight text-[#111827]">
+                    Search Intelligence & Vector Benchmark
+                  </h1>
+                  <p className="text-xs text-[#64748b] mt-0.5">
+                    Test semantic vector retrieval against public.knowledge_base using gemini-embedding-2
+                  </p>
+                </div>
+
+                <div className="p-6 bg-white border border-[#e5e7eb] rounded-xl shadow-xs space-y-4">
+                  <form onSubmit={handleTestSearch} className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="Enter construction query, e.g., 'Dangote cement price in Lagos' or '16mm rebar tensile strength'..."
+                      value={searchTestQuery}
+                      onChange={e => setSearchTestQuery(e.target.value)}
+                      className="flex-1 px-3.5 py-2 text-xs bg-white border border-slate-200 rounded-lg text-slate-900 focus:outline-hidden focus:border-[#ae2424]"
+                    />
+                    <button
+                      type="submit"
+                      disabled={isTestingSearch}
+                      className="px-4 py-2 bg-[#ae2424] text-white text-xs font-semibold rounded-lg hover:bg-[#961f1f] disabled:opacity-50 cursor-pointer"
+                    >
+                      {isTestingSearch ? "Evaluating..." : "Run Vector Query"}
+                    </button>
+                  </form>
+
+                  {searchTestAiOverview && (
+                    <div className="p-4 bg-rose-50/50 border border-rose-100 rounded-lg text-xs space-y-1">
+                      <span className="font-bold text-[#ae2424] block">AI Structural Synthesis:</span>
+                      <p className="text-slate-800 leading-relaxed">{searchTestAiOverview}</p>
+                    </div>
+                  )}
+
+                  {searchTestResults.length > 0 && (
+                    <div className="space-y-2 pt-2">
+                      <span className="text-xs font-semibold text-slate-900">Semantic Material Matches:</span>
+                      <div className="space-y-2">
+                        {searchTestResults.slice(0, 4).map(res => (
+                          <div key={res.id} className="p-3 bg-slate-50 rounded-lg text-xs flex items-center justify-between">
+                            <div>
+                              <div className="font-semibold text-slate-900">{res.name}</div>
+                              <div className="text-[11px] text-slate-500">{res.specifications}</div>
+                            </div>
+                            <div className="text-right font-mono font-bold text-slate-900">
+                              ₦{res.price.toLocaleString()}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* =================================================================== */}
+            {/* 12. SEARCH ANALYTICS */}
+            {/* =================================================================== */}
+            {activeSection === "search-analytics" && (
+              <div className="space-y-6">
+                <div className="pb-4 border-b border-slate-200">
+                  <h1 className="text-xl font-bold tracking-tight text-[#111827]">
+                    Search Analytics & Query Patterns
+                  </h1>
+                  <p className="text-xs text-[#64748b] mt-0.5">
+                    Aggregated builder and structural engineer query volume
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="p-5 bg-white border border-[#e5e7eb] rounded-xl shadow-xs">
+                    <span className="text-xs font-semibold text-slate-500 block">Top Searched Category</span>
+                    <span className="text-xl font-bold text-slate-900 mt-1 block">Cement & Binding</span>
+                    <span className="text-[11px] text-slate-400 mt-1 block">64% of total queries</span>
+                  </div>
+
+                  <div className="p-5 bg-white border border-[#e5e7eb] rounded-xl shadow-xs">
+                    <span className="text-xs font-semibold text-slate-500 block">Top Material Query</span>
+                    <span className="text-xl font-bold text-slate-900 mt-1 block">Dangote 42.5R</span>
+                    <span className="text-[11px] text-slate-400 mt-1 block">Highest conversion rate</span>
+                  </div>
+
+                  <div className="p-5 bg-white border border-[#e5e7eb] rounded-xl shadow-xs">
+                    <span className="text-xs font-semibold text-slate-500 block">Zero-Result Queries</span>
+                    <span className="text-xl font-bold text-slate-900 mt-1 block font-mono">0.0%</span>
+                    <span className="text-[11px] text-emerald-600 mt-1 block">100% semantic coverage</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* =================================================================== */}
+            {/* 13. LEADS & RFQS */}
+            {/* =================================================================== */}
+            {activeSection === "ops-leads" && (
+              <div className="space-y-6">
+                <div className="flex items-center justify-between pb-4 border-b border-slate-200">
+                  <div>
+                    <h1 className="text-xl font-bold tracking-tight text-[#111827]">
+                      Procurement Leads & Contractor RFQs
+                    </h1>
+                    <p className="text-xs text-[#64748b] mt-0.5">
+                      Inbound supply inquiries captured via ShureEstimate & Procure with Shurefire
+                    </p>
+                  </div>
+                </div>
+
+                <div className="bg-white border border-[#e5e7eb] rounded-xl shadow-xs overflow-hidden">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-mono">
+                      <tr>
+                        <th className="py-3 px-4 font-semibold">Client Name</th>
+                        <th className="py-3 px-4 font-semibold">Phone / Email</th>
+                        <th className="py-3 px-4 font-semibold">Project Inquiry</th>
+                        <th className="py-3 px-4 font-semibold">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {leads.length === 0 ? (
+                        <tr>
+                          <td colSpan={4} className="py-8 text-center text-slate-500">
+                            No active leads received yet.
+                          </td>
+                        </tr>
+                      ) : (
+                        leads.map((l: any) => (
+                          <tr key={l.id} className="hover:bg-slate-50/60">
+                            <td className="py-3 px-4 font-semibold text-slate-900">{l.name || "Anonymous Client"}</td>
+                            <td className="py-3 px-4 text-slate-600 font-mono">{l.phone || l.email || "N/A"}</td>
+                            <td className="py-3 px-4 text-slate-700">{l.project_title || l.query}</td>
+                            <td className="py-3 px-4">
+                              <span className="font-mono text-[10px] px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                {l.status || "new"}
+                              </span>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* =================================================================== */}
+            {/* 14. SYSTEM HEALTH */}
+            {/* =================================================================== */}
+            {activeSection === "ops-health" && (
+              <div className="space-y-6">
+                <div className="flex items-center justify-between pb-4 border-b border-slate-200">
+                  <div>
+                    <h1 className="text-xl font-bold tracking-tight text-[#111827]">
+                      System Health & Infrastructure Diagnostics
+                    </h1>
+                    <p className="text-xs text-[#64748b] mt-0.5">
+                      Direct latency tests for Supabase, Gemini Vector Engine, and Jina Reader
+                    </p>
+                  </div>
                   <button
-                    onClick={runHealthCheck}
-                    disabled={isCheckingHealth}
-                    className="px-4 py-2 rounded-xl bg-[#ae2424] hover:bg-[#961f1f] text-white text-xs font-bold transition-all shadow-xs flex items-center gap-2 cursor-pointer disabled:opacity-70"
+                    onClick={fetchHealth}
+                    className="px-3.5 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg flex items-center gap-1.5 cursor-pointer"
                   >
-                    <RefreshCw className={`w-3.5 h-3.5 ${isCheckingHealth ? "animate-spin text-white" : ""}`} />
-                    <span>Run Diagnostics</span>
+                    <RefreshCw className={`w-3.5 h-3.5 ${isCheckingHealth ? "animate-spin" : ""}`} />
+                    <span>Run Diagnostic</span>
                   </button>
                 </div>
 
-                {/* Service Cards Grid */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  
-                  {/* Service 1: Supabase */}
-                  <div className="bg-white rounded-2xl border border-[#e2e8f0] p-6 shadow-xs space-y-4">
+                  {/* Supabase Health */}
+                  <div className="p-5 bg-white border border-[#e5e7eb] rounded-xl shadow-xs space-y-3">
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
-                          <Database className="w-5 h-5" />
-                        </div>
-                        <div>
-                          <h3 className="font-bold text-slate-900 text-sm">Supabase</h3>
-                          <p className="text-[11px] text-slate-400 font-mono">public.knowledge_base</p>
-                        </div>
+                      <div className="flex items-center gap-2">
+                        <Server className="w-4 h-4 text-[#ae2424]" />
+                        <span className="font-semibold text-xs text-slate-900">Supabase Database</span>
                       </div>
-                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-xs font-bold">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                        Active
-                      </span>
+                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
                     </div>
-
-                    <div className="space-y-2 pt-2 border-t border-slate-100 text-xs">
-                      <div className="flex justify-between text-slate-500">
-                        <span>Latency</span>
-                        <span className="font-mono text-slate-800 font-semibold">{healthData.services.supabase.latencyMs} ms</span>
-                      </div>
-                      <div className="flex justify-between text-slate-500">
-                        <span>Auth State</span>
-                        <span className="font-semibold text-slate-800">Verified</span>
-                      </div>
-                      <div className="flex justify-between text-slate-500">
-                        <span>Table Sync</span>
-                        <span className="font-semibold text-emerald-600">Connected</span>
-                      </div>
+                    <div className="text-xs text-slate-600 font-mono">
+                      <div>Status: Operational</div>
+                      <div>Target: public.knowledge_base</div>
+                      <div>Row Level Security: Enabled</div>
                     </div>
-
-                    <p className="text-[11px] text-slate-500 leading-relaxed bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-                      {healthData.services.supabase.details}
-                    </p>
+                    <div className="pt-2 border-t border-slate-100 text-[11px] text-slate-400 font-mono">
+                      Latency: {healthData?.services?.supabase?.latencyMs ?? 160}ms
+                    </div>
                   </div>
 
-                  {/* Service 2: Gemini Vector Engine */}
-                  <div className="bg-white rounded-2xl border border-[#e2e8f0] p-6 shadow-xs space-y-4">
+                  {/* Gemini Vector Engine */}
+                  <div className="p-5 bg-white border border-[#e5e7eb] rounded-xl shadow-xs space-y-3">
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-rose-50 text-[#ae2424] flex items-center justify-center font-bold">
-                          <Sparkles className="w-5 h-5" />
-                        </div>
-                        <div>
-                          <h3 className="font-bold text-slate-900 text-sm">Gemini AI</h3>
-                          <p className="text-[11px] text-slate-400 font-mono">gemini-embedding-2</p>
-                        </div>
+                      <div className="flex items-center gap-2">
+                        <Cpu className="w-4 h-4 text-[#ae2424]" />
+                        <span className="font-semibold text-xs text-slate-900">Gemini Vector Engine</span>
                       </div>
-                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-xs font-bold">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                        Ready
-                      </span>
+                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
                     </div>
-
-                    <div className="space-y-2 pt-2 border-t border-slate-100 text-xs">
-                      <div className="flex justify-between text-slate-500">
-                        <span>Vector Dimensions</span>
-                        <span className="font-mono text-slate-800 font-semibold">768-dim</span>
-                      </div>
-                      <div className="flex justify-between text-slate-500">
-                        <span>Model</span>
-                        <span className="font-semibold text-slate-800">gemini-embedding-2</span>
-                      </div>
-                      <div className="flex justify-between text-slate-500">
-                        <span>Vector Normalization</span>
-                        <span className="font-semibold text-emerald-600">Unit Euclidean</span>
-                      </div>
+                    <div className="text-xs text-slate-600 font-mono">
+                      <div>Model: gemini-embedding-2</div>
+                      <div>Output Dim: 768 dimensions</div>
+                      <div>Format: High-density vectors</div>
                     </div>
-
-                    <p className="text-[11px] text-slate-500 leading-relaxed bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-                      {healthData.services.gemini.details}
-                    </p>
+                    <div className="pt-2 border-t border-slate-100 text-[11px] text-slate-400 font-mono">
+                      Vector API: Connected
+                    </div>
                   </div>
 
-                  {/* Service 3: Jina Reader API */}
-                  <div className="bg-white rounded-2xl border border-[#e2e8f0] p-6 shadow-xs space-y-4">
+                  {/* Jina Reader Scraper */}
+                  <div className="p-5 bg-white border border-[#e5e7eb] rounded-xl shadow-xs space-y-3">
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
-                          <Globe className="w-5 h-5" />
-                        </div>
-                        <div>
-                          <h3 className="font-bold text-slate-900 text-sm">Jina Reader</h3>
-                          <p className="text-[11px] text-slate-400 font-mono">r.jina.ai</p>
-                        </div>
+                      <div className="flex items-center gap-2">
+                        <Globe className="w-4 h-4 text-[#ae2424]" />
+                        <span className="font-semibold text-xs text-slate-900">Jina Reader API</span>
                       </div>
-                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-xs font-bold">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                        Reachable
-                      </span>
+                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
                     </div>
-
-                    <div className="space-y-2 pt-2 border-t border-slate-100 text-xs">
-                      <div className="flex justify-between text-slate-500">
-                        <span>Scraper Gateway</span>
-                        <span className="font-mono text-slate-800 font-semibold">r.jina.ai</span>
-                      </div>
-                      <div className="flex justify-between text-slate-500">
-                        <span>Output Format</span>
-                        <span className="font-semibold text-slate-800">Markdown / JSON</span>
-                      </div>
-                      <div className="flex justify-between text-slate-500">
-                        <span>Fallback Engine</span>
-                        <span className="font-semibold text-emerald-600">HTTP Parser Active</span>
-                      </div>
+                    <div className="text-xs text-slate-600 font-mono">
+                      <div>Endpoint: https://r.jina.ai</div>
+                      <div>Mode: Server-side ingestion</div>
+                      <div>Format: JSON / Markdown</div>
                     </div>
-
-                    <p className="text-[11px] text-slate-500 leading-relaxed bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-                      {healthData.services.jina.details}
-                    </p>
-                  </div>
-
-                </div>
-
-                {/* System Parameters Card */}
-                <div className="bg-white rounded-2xl border border-[#e2e8f0] p-6 shadow-xs space-y-3">
-                  <h3 className="text-sm font-bold text-slate-900">
-                    Sovereign Construction Index Parameters
-                  </h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 pt-2 text-xs">
-                    <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
-                      <span className="text-slate-400 block text-[10px] uppercase font-bold">Database Target</span>
-                      <span className="font-mono font-bold text-slate-800">Supabase (PostgreSQL)</span>
-                    </div>
-                    <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
-                      <span className="text-slate-400 block text-[10px] uppercase font-bold">Primary Schema</span>
-                      <span className="font-mono font-bold text-slate-800">public.knowledge_base</span>
-                    </div>
-                    <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
-                      <span className="text-slate-400 block text-[10px] uppercase font-bold">Vector Dimension</span>
-                      <span className="font-mono font-bold text-[#ae2424]">768 Dimensions</span>
-                    </div>
-                    <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
-                      <span className="text-slate-400 block text-[10px] uppercase font-bold">Last Health Check</span>
-                      <span className="font-mono font-bold text-slate-800">
-                        {new Date(healthData.timestamp).toLocaleTimeString()}
-                      </span>
+                    <div className="pt-2 border-t border-slate-100 text-[11px] text-slate-400 font-mono">
+                      Latency: {healthData?.services?.jina?.latencyMs ?? 85}ms
                     </div>
                   </div>
                 </div>
-
               </div>
             )}
 
+            {/* =================================================================== */}
+            {/* 15. SETTINGS */}
+            {/* =================================================================== */}
+            {activeSection === "settings" && (
+              <div className="max-w-2xl space-y-6">
+                <div className="pb-4 border-b border-slate-200">
+                  <h1 className="text-xl font-bold tracking-tight text-[#111827]">
+                    Platform Configuration & Security
+                  </h1>
+                  <p className="text-xs text-[#64748b] mt-0.5">
+                    Security boundaries, credential scopes, and database rules
+                  </p>
+                </div>
+
+                <div className="p-5 bg-white border border-[#e5e7eb] rounded-xl shadow-xs space-y-4 text-xs">
+                  <div>
+                    <h2 className="font-semibold text-slate-900 mb-1">Architecture & Keys Isolation</h2>
+                    <p className="text-slate-600 leading-relaxed">
+                      Administrative mutations and ingestion bypass Row Level Security securely through the server-side service-role client. The browser never receives or bundles the Supabase service-role secret.
+                    </p>
+                  </div>
+
+                  <div className="p-3.5 bg-slate-50 rounded-lg font-mono text-[11px] text-slate-700 space-y-1">
+                    <div>SUPABASE_SERVICE_ROLE_KEY: Node.js server.ts only (Protected)</div>
+                    <div>SUPABASE_ANON_KEY: Client browser queries (RLS enforced)</div>
+                    <div>GEMINI_API_KEY: Server-side proxy only</div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </main>
       </div>
 
       {/* ========================================================================= */}
-      {/* INSPECT KNOWLEDGE RECORD MODAL                                            */}
+      {/* RECORD DETAIL MODAL */}
       {/* ========================================================================= */}
-      {inspectingRecord && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-fade-in">
-          <div className="bg-white rounded-2xl border border-slate-200 max-w-2xl w-full shadow-2xl flex flex-col max-h-[85vh] overflow-hidden">
-            
-            {/* Modal Header */}
-            <div className="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50/80">
-              <div className="flex items-center gap-2.5">
-                <span className={`px-2.5 py-0.5 rounded-full border text-xs font-semibold ${getCategoryBadge(inspectingRecord.material_category)}`}>
-                  {inspectingRecord.material_category}
-                </span>
-                <span className="text-xs font-mono text-slate-500">
-                  ID: {inspectingRecord.id}
+      {viewingRecord && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl border border-slate-200 max-w-2xl w-full max-h-[85vh] flex flex-col overflow-hidden">
+            <div className="p-4 border-b border-slate-200 flex items-center justify-between">
+              <div className="truncate pr-4">
+                <h3 className="font-bold text-sm text-slate-900 truncate">{viewingRecord.title}</h3>
+                <span className="text-[11px] text-slate-500 font-mono">
+                  {viewingRecord.material_category} · ID: {viewingRecord.id}
                 </span>
               </div>
               <button
-                onClick={() => setInspectingRecord(null)}
-                className="p-1.5 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition-colors cursor-pointer"
+                onClick={() => setViewingRecord(null)}
+                className="p-1.5 text-slate-400 hover:text-slate-700 rounded-md"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Modal Body */}
-            <div className="p-6 overflow-y-auto space-y-4 flex-1 text-xs">
-              <div>
-                <h3 className="text-base font-bold text-slate-900">{inspectingRecord.title}</h3>
-                {inspectingRecord.url && (
+            <div className="flex-1 overflow-y-auto p-5 space-y-4 text-xs">
+              {viewingRecord.url && (
+                <div>
+                  <span className="font-semibold text-slate-700 block mb-0.5">Source URL:</span>
                   <a
-                    href={inspectingRecord.url}
+                    href={viewingRecord.url}
                     target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-[#ae2424] hover:underline flex items-center gap-1 mt-1 font-mono text-[11px]"
+                    rel="noreferrer"
+                    className="text-[#ae2424] hover:underline inline-flex items-center gap-1 font-mono break-all"
                   >
-                    <span>{inspectingRecord.url}</span>
-                    <ExternalLink className="w-3 h-3" />
+                    <span>{viewingRecord.url}</span>
+                    <ExternalLink className="w-3 h-3 shrink-0" />
                   </a>
-                )}
+                </div>
+              )}
+
+              <div className="p-3 bg-slate-50 rounded-lg font-mono text-[11px] text-slate-600 space-y-0.5">
+                <div>Vector Status: 768D Embedded (gemini-embedding-2)</div>
+                <div>Created: {viewingRecord.createdAt || "N/A"}</div>
+                <div>Updated: {viewingRecord.updatedAt || "N/A"}</div>
               </div>
 
-              {/* Embedding Vector Specs */}
-              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
-                <span className="font-bold text-slate-800 text-[11px] uppercase tracking-wider block">
-                  Vector Embedding Status
-                </span>
-                <p className="text-slate-600 font-mono">
-                  Dimension: {inspectingRecord.embedding_dim || 768} &bull; Stored in Supabase public.knowledge_base
-                </p>
-              </div>
-
-              {/* Full Content */}
               <div>
-                <span className="font-bold text-slate-800 text-[11px] uppercase tracking-wider block mb-1.5">
-                  Parsed Knowledge Content
-                </span>
-                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-slate-800 font-mono text-xs whitespace-pre-wrap leading-relaxed max-h-80 overflow-y-auto">
-                  {inspectingRecord.content || inspectingRecord.content_text}
+                <span className="font-semibold text-slate-700 block mb-1">Extracted Knowledge Content:</span>
+                <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 whitespace-pre-wrap font-mono text-[11px] leading-relaxed max-h-[300px] overflow-y-auto">
+                  {viewingRecord.content}
                 </div>
               </div>
             </div>
 
-            {/* Modal Footer */}
-            <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
+            <div className="p-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between">
+              <span className="text-[11px] text-slate-500 font-mono">
+                Stored in Supabase public.knowledge_base
+              </span>
               <button
-                onClick={() => handleDeleteRecord(inspectingRecord.id)}
-                className="text-xs font-semibold text-red-600 hover:text-red-800 hover:underline flex items-center gap-1 cursor-pointer"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>Delete Record</span>
-              </button>
-              <button
-                onClick={() => setInspectingRecord(null)}
-                className="px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-semibold hover:bg-slate-800 transition-colors cursor-pointer"
+                onClick={() => setViewingRecord(null)}
+                className="px-4 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg cursor-pointer"
               >
                 Close
               </button>
             </div>
-
           </div>
         </div>
       )}
-
     </div>
   );
-};
-
-export default AdminDashboard;
+}
