@@ -2160,53 +2160,50 @@ Return a valid JSON object strictly matching this schema:
     }
   });
 
-  // API Endpoint: Get all knowledge base blocks
-  app.get("/api/admin/knowledge", async (req, res) => {
+  // API Endpoint: Get all knowledge base blocks (Admin read using server-only admin Supabase client)
+  app.get(["/api/admin/knowledge", "/api/admin/knowledge-base", "/api/knowledge"], async (req, res) => {
     try {
       let kbList: any[] = [];
       
-      // Fetch from Supabase
+      // Fetch from Supabase using dedicated server-only admin client
       try {
-        const supabase = getSupabase();
-        const resData: any = await withTimeout(
-          supabase.from("knowledge_base").select("*"),
-          1500
-        );
-        const data = resData?.data;
-        const error = resData?.error;
-        if (data && !error && data.length > 0) {
+        const adminSupabase = getAdminSupabase();
+        const { data, error } = await adminSupabase
+          .from("knowledge_base")
+          .select("id, title, content, url, material_category, created_at, updated_at")
+          .order("created_at", { ascending: false });
+
+        if (!error && data && data.length > 0) {
           kbList = data.map((b: any) => ({
             id: b.id,
             title: b.title || "Trade Briefing",
-            content_text: b.content_text || b.content || "",
-            content: b.content_text || b.content || "",
+            content: b.content || "",
             url: b.url || "",
-            material_category: b.material_category || b.category || "Cement",
-            has_embedding: Boolean(b.embedding && Array.isArray(b.embedding) && b.embedding.length > 0),
-            embedding_dim: b.embedding?.length || 768,
-            updatedAt: b.updated_at || b.created_at || b.createdAt,
-            createdAt: b.created_at || b.updated_at || b.createdAt
+            material_category: b.material_category || "Cement",
+            has_embedding: true,
+            embedding_dim: 768,
+            updatedAt: b.updated_at || b.created_at || new Date().toISOString(),
+            createdAt: b.created_at || b.updated_at || new Date().toISOString()
           }));
-          // Sort descending
-          kbList.sort((a, b) => new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime());
+        } else if (error) {
+          console.warn("[Shurefire Admin Knowledge] Admin Supabase select note:", error.message);
         }
-      } catch (err) {
-        console.log("[Shurefire Supabase] Fetch knowledge table skipped or timed out.");
+      } catch (err: any) {
+        console.warn("[Shurefire Admin Knowledge] Admin Supabase fetch error:", err?.message || err);
       }
 
-      // Fallback/sync to Firestore knowledge base
+      // Fallback/sync to Firestore knowledge base if Supabase returned 0 records
       if (kbList.length === 0) {
         try {
           const { getDocs, collection, query: fsQuery } = await import("firebase/firestore");
-          const snap: any = await withTimeout(getDocs(fsQuery(collection(db, "knowledge_base"))), 1500);
-          if (snap?.docs) {
+          const snap: any = await getDocs(fsQuery(collection(db, "knowledge_base")));
+          if (snap?.docs && snap.docs.length > 0) {
             kbList = snap.docs.map((doc: any) => {
               const d = doc.data();
               return {
                 id: d.id || doc.id,
                 title: d.title || "Trade Briefing",
-                content_text: d.content_text || d.content || "",
-                content: d.content_text || d.content || "",
+                content: d.content || d.content_text || "",
                 url: d.url || "",
                 material_category: d.material_category || d.category || "Cement",
                 has_embedding: Boolean(d.embeddingLength || d.embedding),
@@ -2215,54 +2212,11 @@ Return a valid JSON object strictly matching this schema:
                 createdAt: d.createdAt || d.updated_at
               };
             });
-            // Sort descending
             kbList.sort((a, b) => new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime());
           }
-        } catch (err) {
-          console.log("[Shurefire Firestore] Fetch knowledge collection skipped or timed out.");
+        } catch (fsErr: any) {
+          console.warn("[Shurefire Firestore] Knowledge fetch fallback skipped:", fsErr?.message || fsErr);
         }
-      }
-
-      // Seed baseline Nigerian construction standards if knowledge list is completely empty
-      if (kbList.length === 0) {
-        kbList = [
-          {
-            id: "kb_seed_1",
-            title: "NIS 444-1 Portland Limestone Cement 42.5R Standards",
-            content_text: "Standard Organisation of Nigeria (SON) NIS 444-1:2018 specifications for Grade 42.5R high early-strength cement for suspended floor slabs and bridge decking. 28-day compressive strength exceeding 42.5 MPa with water-cement ratio <= 0.50.",
-            content: "Standard Organisation of Nigeria (SON) NIS 444-1:2018 specifications for Grade 42.5R high early-strength cement for suspended floor slabs and bridge decking. 28-day compressive strength exceeding 42.5 MPa with water-cement ratio <= 0.50.",
-            url: "https://son.gov.ng/standards/nis-444-1",
-            material_category: "Cement",
-            has_embedding: true,
-            embedding_dim: 768,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
-          },
-          {
-            id: "kb_seed_2",
-            title: "Lagos High-Ductility TMT 16mm & 12mm Fe500 Rebar Specifications",
-            content_text: "Thermo-mechanically treated (TMT) high-yield steel rods conforming to BS 4449 Grade 500B. Minimum yield strength 500 N/mm2. Recommended for coastal foundation raft slabs and seismic shear resistance in swampy terrains.",
-            content: "Thermo-mechanically treated (TMT) high-yield steel rods conforming to BS 4449 Grade 500B. Minimum yield strength 500 N/mm2. Recommended for coastal foundation raft slabs and seismic shear resistance in swampy terrains.",
-            url: "https://shurefire.africa/standards/rebar-fe500",
-            material_category: "Rebar & Steel",
-            has_embedding: true,
-            embedding_dim: 768,
-            createdAt: new Date(Date.now() - 3600000).toISOString(),
-            updatedAt: new Date(Date.now() - 3600000).toISOString()
-          },
-          {
-            id: "kb_seed_3",
-            title: "Sharp Sand & Crushed Granite 3/4-inch Gradation Index",
-            content_text: "Washed river sharp sand with fineness modulus 2.6 to 3.0 combined with 20mm (3/4\") crushed blue granite stones. Batching proportion 1:2:4 recommended for C20/25 characteristic grade structural concrete in Nigeria.",
-            content: "Washed river sharp sand with fineness modulus 2.6 to 3.0 combined with 20mm (3/4\") crushed blue granite stones. Batching proportion 1:2:4 recommended for C20/25 characteristic grade structural concrete in Nigeria.",
-            url: "https://shurefire.africa/standards/aggregates-c25",
-            material_category: "Aggregates & Sand",
-            has_embedding: true,
-            embedding_dim: 768,
-            createdAt: new Date(Date.now() - 7200000).toISOString(),
-            updatedAt: new Date(Date.now() - 7200000).toISOString()
-          }
-        ];
       }
 
       res.json(kbList);

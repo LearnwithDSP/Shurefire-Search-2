@@ -196,29 +196,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       const res = await fetch("/api/admin/knowledge");
       if (res.ok) {
         const data = await res.json();
-        setRecords(data);
+        const recordsList = Array.isArray(data) ? data : (data.records || data.data || []);
+        setRecords(recordsList);
       } else {
-        // Direct Supabase fallback
-        const client = (typeof window !== "undefined" && window.dbClient) || getSupabase();
-        const { data: supaData } = await client
-          .from("knowledge_base")
-          .select("*")
-          .order("created_at", { ascending: false });
-        if (supaData && supaData.length > 0) {
-          setRecords(
-            supaData.map((d: any) => ({
-              id: d.id,
-              title: d.title || "Untitled Knowledge Record",
-              content: d.content || d.content_text || "",
-              url: d.url || "",
-              material_category: d.material_category || "Cement",
-              has_embedding: Boolean(d.embedding),
-              embedding_dim: 768,
-              createdAt: d.created_at || d.createdAt,
-              updatedAt: d.updated_at || d.updatedAt
-            }))
-          );
-        }
+        console.warn(`[AdminDashboard] Knowledge fetch returned status: ${res.status}`);
       }
     } catch (err) {
       console.warn("Error fetching knowledge base records:", err);
