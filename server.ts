@@ -44,8 +44,7 @@ async function startServer() {
     if (
       !apiKey || 
       apiKey === "MY_GEMINI_API_KEY" || 
-      apiKey.includes("YOUR_GEMINI_API_KEY") ||
-      apiKey.includes("AIzaSyBfGIeS0tWFVRc3IygD") // Flagged/revoked key reported by Google API
+      apiKey.includes("YOUR_GEMINI_API_KEY")
     ) {
       return null;
     }
@@ -819,14 +818,6 @@ Generate the complete structured JSON response matching the schema. In the "sear
     }
   });
 
-  // API Endpoint: Expose Supabase connection parameters to the client
-  app.get("/api/supabase-config", (req, res) => {
-    res.json({
-      url: process.env.SUPABASE_URL || "https://ickghlgpkikwrelabayo.supabase.co",
-      key: process.env.SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imlja2dobGdwa2lrd3JlbGFiYXlvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQyMDM0MjgsImV4cCI6MjA5OTc3OTQyOH0.PdnGKbglH2Yc0tWjnlXEgjr53HN6L9lUals6I0G5Cvc"
-    });
-  });
-
   // In-memory live search history cache
   const liveRecentSearches: string[] = [
     "Cost of 3-bedroom bungalow in Lekki",
@@ -1022,6 +1013,114 @@ Generate the complete structured JSON response matching the schema. In the "sear
     }
   });
 
+  // API Endpoint: Submit project estimate from ShureEstimate wizard
+  app.post("/api/project-estimates", async (req, res) => {
+    try {
+      const {
+        id,
+        project_type,
+        location,
+        site_condition,
+        terrain,
+        materials,
+        full_name,
+        phone_number,
+        email,
+        estimated_budget,
+        timeline,
+        calculations
+      } = req.body;
+
+      const estimateId = id || `est_${Date.now()}`;
+      const payload = {
+        id: estimateId,
+        project_type: project_type || "4-Bed Duplex",
+        location: location || "Lagos, Nigeria",
+        site_condition: site_condition || "Standard Inland",
+        terrain: terrain || site_condition || "Standard Inland",
+        materials: Array.isArray(materials) ? materials : [],
+        full_name: full_name || "Valued Contractor",
+        phone_number: phone_number || "",
+        email: email || "client@shurefire.ng",
+        estimated_budget: estimated_budget || "₦25M - ₦50M",
+        timeline: timeline || "Within 1-2 Months",
+        calculations: calculations || {},
+        created_at: new Date().toISOString()
+      };
+
+      // 1. Save to Supabase public.project_estimates
+      try {
+        const supabase = getSupabase();
+        await supabase.from("project_estimates").insert(payload);
+      } catch (dbErr) {
+        console.log("[Shurefire Supabase] project_estimates table insert skipped or timed out.");
+      }
+
+      // 2. Also log as a lead in Supabase leads table
+      try {
+        const supabase = getSupabase();
+        await supabase.from("leads").insert({
+          id: `lead_${estimateId}`,
+          name: payload.full_name,
+          phone: payload.phone_number,
+          email: payload.email,
+          query: `ShureEstimate: ${payload.project_type} in ${payload.location}`,
+          project_title: `${payload.project_type} (${payload.terrain})`,
+          notes: `Budget: ${payload.estimated_budget} | Timeline: ${payload.timeline} | Materials: ${payload.materials.join(", ")}`,
+          grand_total: payload.calculations?.grandTotal || 0,
+          status: "new",
+          created_at: payload.created_at
+        });
+      } catch (leadErr) {
+        console.log("[Shurefire Supabase] leads sync skipped.");
+      }
+
+      // 3. Save to Firestore project_estimates
+      try {
+        await setDoc(doc(db, "project_estimates", estimateId), payload);
+        console.log(`[Shurefire Firestore] Project estimate saved: ${estimateId}`);
+      } catch (fsErr) {
+        console.log("[Shurefire Firestore] project_estimates write skipped.");
+      }
+
+      res.json({ success: true, id: estimateId });
+    } catch (err) {
+      console.error("Project estimate submission error:", err);
+      res.status(500).json({ error: "Failed to submit project estimate" });
+    }
+  });
+
+  app.get("/api/project-estimates", async (req, res) => {
+    try {
+      let estimatesList: any[] = [];
+      try {
+        const supabase = getSupabase();
+        const { data, error } = await supabase
+          .from("project_estimates")
+          .select("*")
+          .order("created_at", { ascending: false })
+          .limit(50);
+        if (!error && Array.isArray(data)) {
+          estimatesList = data;
+        }
+      } catch (err) {}
+
+      if (estimatesList.length === 0) {
+        try {
+          const { getDocs, collection, query: fsQuery, orderBy, limit } = await import("firebase/firestore");
+          const snap = await getDocs(fsQuery(collection(db, "project_estimates"), orderBy("created_at", "desc"), limit(50)));
+          if (snap?.docs) {
+            estimatesList = snap.docs.map(d => d.data());
+          }
+        } catch (err) {}
+      }
+
+      res.json(estimatesList);
+    } catch (err) {
+      res.json([]);
+    }
+  });
+
   // API Endpoint: Verify if user is an admin
   app.post("/api/admin/verify", async (req, res) => {
     try {
@@ -1058,37 +1157,6 @@ Generate the complete structured JSON response matching the schema. In the "sear
           }
         } catch (err) {
           console.error("[Shurefire Firestore] Profiles query failed:", err);
-        }
-      }
-
-      // Special bootstrap check: if user is logged in as 'ramonbisola1@gmail.com', automatically make them admin
-      if (!isAdminUser && (email === "ramonbisola1@gmail.com" || email === "admin@shurefire.com")) {
-        isAdminUser = true;
-        const profilePayload = {
-          id: userId,
-          email: email || "",
-          role: "admin",
-          createdAt: new Date().toISOString()
-        };
-
-        // Write admin profile to Supabase
-        try {
-          const supabase = getSupabase();
-          await supabase.from("profiles").upsert({
-            id: userId,
-            email: email || "",
-            role: "admin",
-            created_at: profilePayload.createdAt
-          });
-        } catch (err) {
-          console.log("[Shurefire Supabase] Profiles write skipped.");
-        }
-
-        // Write admin profile to Firestore
-        try {
-          await setDoc(doc(db, "profiles", userId), profilePayload);
-        } catch (err) {
-          console.error("[Shurefire Firestore] Profiles write failed:", err);
         }
       }
 
@@ -1269,17 +1337,6 @@ Generate the complete structured JSON response matching the schema. In the "sear
         }
       }
 
-      // 3. Special Bootstrap Check fallback (e.g. offline developer environment override)
-      if (!authenticatedUser && (emailClean === "ramonbisola1@gmail.com" || emailClean === "admin@shurefire.com")) {
-        authenticatedUser = {
-          id: "bootstrap_admin",
-          email: emailClean,
-          fullName: "Ramon Bisola",
-          role: "admin"
-        };
-        console.log(`[Server Admin Login] Bootstrap override success for ${emailClean}`);
-      }
-
       if (authenticatedUser) {
         res.json({ success: true, user: authenticatedUser });
       } else {
@@ -1347,37 +1404,50 @@ Generate the complete structured JSON response matching the schema. In the "sear
     }
   });
 
-  // Helper: Deterministic 768-dim normalized embedding vector
+  // Helper: Validate UUID v4 format
+  const isValidUuid = (val?: string | null): boolean => {
+    if (!val || typeof val !== "string") return false;
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(val.trim());
+  };
+
+  // Helper: Real 768-dim embedding vector via Gemini gemini-embedding-2
   const generate768DimEmbedding = async (text: string, ai: GoogleGenAI | null): Promise<number[]> => {
-    if (ai) {
-      try {
-        const response = await ai.models.embedContent({
-          model: "text-embedding-004",
-          contents: text.slice(0, 8000),
-        });
-        const values = response?.embeddings?.[0]?.values || (response as any)?.embedding?.values;
-        if (values && values.length > 0) {
-          return values;
-        }
-      } catch (embErr) {
-        console.warn("[Shurefire Embedding] Gemini API text-embedding-004 fallback:", embErr);
+    if (!ai) {
+      throw new Error("Gemini AI client is not configured. Real embedding generation requires a valid GEMINI_API_KEY.");
+    }
+
+    const cleanText = (text || "").trim();
+    if (!cleanText) {
+      throw new Error("Cannot generate embedding for empty text content.");
+    }
+
+    try {
+      const response = await ai.models.embedContent({
+        model: "gemini-embedding-2",
+        contents: cleanText.slice(0, 8000),
+        config: {
+          outputDimensionality: 768,
+        },
+      });
+
+      const values: number[] | undefined =
+        response?.embeddings?.[0]?.values ||
+        (response as any)?.embedding?.values ||
+        (response as any)?.values;
+
+      if (!values || !Array.isArray(values) || values.length === 0) {
+        throw new Error("Gemini API returned an empty embedding response.");
       }
+
+      if (values.length !== 768) {
+        throw new Error(`Embedding dimension mismatch: expected 768, received ${values.length}.`);
+      }
+
+      return values;
+    } catch (embErr: any) {
+      console.error("[Shurefire Embedding] gemini-embedding-2 error:", embErr?.message || embErr);
+      throw new Error(`Embedding generation failed: ${embErr?.message || "Unknown error from gemini-embedding-2"}`);
     }
-    // High-resolution deterministic pseudo-vector (768 dimensions)
-    const vec: number[] = new Array(768).fill(0);
-    let h1 = 0xdeadbeef;
-    let h2 = 0x41c6ce57;
-    for (let i = 0; i < text.length; i++) {
-      const ch = text.charCodeAt(i);
-      h1 = Math.imul(h1 ^ ch, 2654435761);
-      h2 = Math.imul(h2 ^ ch, 1597334677);
-    }
-    for (let i = 0; i < 768; i++) {
-      const v = Math.sin((h1 ^ (i * 37)) + i) * Math.cos((h2 ^ (i * 73)) - i);
-      vec[i] = parseFloat(v.toFixed(6));
-    }
-    const norm = Math.sqrt(vec.reduce((sum, val) => sum + val * val, 0)) || 1;
-    return vec.map(v => parseFloat((v / norm).toFixed(6)));
   };
 
   // Helper: Sovereign High-Fidelity Synthesizer Fallback for Real-time Paragraph Expansion
@@ -1742,80 +1812,71 @@ Return a valid JSON object strictly matching this schema:
         extractedTitle = firstLine || `${category} Intelligence Briefing`;
       }
 
-      // 2. Vector Embedding Generation (768-dim) via Gemini
+      // 2. Vector Embedding Generation (768-dim) via Gemini gemini-embedding-2
       const ai = getGeminiClient();
-      const embeddingVector = await generate768DimEmbedding(`${extractedTitle}\n\n${extractedContent.slice(0, 3000)}`, ai);
+      let embeddingVector: number[];
+      try {
+        embeddingVector = await generate768DimEmbedding(`${extractedTitle}\n\n${extractedContent.slice(0, 3000)}`, ai);
+      } catch (embErr: any) {
+        console.error("[Crawl Ingestion Embedding Failure]", embErr?.message || embErr);
+        res.status(500).json({ error: embErr?.message || "Failed to generate 768-dim embedding via gemini-embedding-2" });
+        return;
+      }
 
-      const blockId = `kb_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
       const nowIso = new Date().toISOString();
 
-      const recordPayload = {
-        id: blockId,
+      // 3. Save into Supabase public.knowledge_base
+      // For NEW records: DO NOT provide the id, allow PostgreSQL gen_random_uuid() to generate the UUID
+      const supabasePayload: Record<string, any> = {
         title: extractedTitle,
         content: extractedContent,
         content_text: extractedContent,
-        url: cleanUrl,
+        url: cleanUrl || null,
         material_category: category,
-        category: category,
         embedding: embeddingVector,
         created_at: nowIso,
-        updated_at: nowIso,
-        createdAt: nowIso,
-        updatedAt: nowIso
+        updated_at: nowIso
       };
 
-      // 3. Save into Supabase public.knowledge_base
+      let savedRecordId: string | null = null;
       let savedToSupabase = false;
+
       try {
         const supabase = getSupabase();
-        const { error: supaErr } = await supabase
+        const { data: insertedData, error: supaErr } = await supabase
           .from("knowledge_base")
-          .upsert({
-            id: recordPayload.id,
-            title: recordPayload.title,
-            content: recordPayload.content,
-            content_text: recordPayload.content_text,
-            url: recordPayload.url,
-            material_category: recordPayload.material_category,
-            embedding: recordPayload.embedding,
-            created_at: recordPayload.created_at,
-            updated_at: recordPayload.updated_at
-          });
+          .insert(supabasePayload)
+          .select("id, title, content, content_text, url, material_category, created_at, updated_at")
+          .single();
 
-        if (!supaErr) {
+        if (!supaErr && insertedData?.id) {
           savedToSupabase = true;
-        } else {
-          console.warn("[Shurefire Supabase Ingestion] Primary upsert notice, trying insert fallback:", supaErr.message);
-          const { error: insertErr } = await supabase
-            .from("knowledge_base")
-            .insert({
-              id: recordPayload.id,
-              title: recordPayload.title,
-              content_text: recordPayload.content_text,
-              content: recordPayload.content,
-              url: recordPayload.url,
-              material_category: recordPayload.material_category,
-              created_at: recordPayload.created_at,
-              updated_at: recordPayload.updated_at
-            });
-          if (!insertErr) savedToSupabase = true;
+          savedRecordId = insertedData.id;
+        } else if (supaErr) {
+          console.error("[Shurefire Supabase Ingestion] Insert error:", supaErr.message);
+          res.status(500).json({ error: `Failed to insert record into Supabase: ${supaErr.message}` });
+          return;
         }
-      } catch (dbErr) {
-        console.warn("[Shurefire Supabase Ingestion] Supabase save error:", dbErr);
+      } catch (dbErr: any) {
+        console.error("[Shurefire Supabase Ingestion] Supabase save error:", dbErr?.message || dbErr);
+        res.status(500).json({ error: `Supabase save exception: ${dbErr?.message || "Unknown database error"}` });
+        return;
       }
 
-      // 4. Also mirror to Firestore for durability
+      const finalRecordId = savedRecordId || crypto.randomUUID();
+
+      // 4. Also mirror to Firestore for durability using the real UUID
       try {
-        await setDoc(doc(db, "knowledge_base", blockId), {
-          id: recordPayload.id,
-          title: recordPayload.title,
-          content: recordPayload.content,
-          content_text: recordPayload.content_text,
-          url: recordPayload.url,
-          material_category: recordPayload.material_category,
+        await setDoc(doc(db, "knowledge_base", finalRecordId), {
+          id: finalRecordId,
+          title: extractedTitle,
+          content: extractedContent,
+          content_text: extractedContent,
+          url: cleanUrl || null,
+          material_category: category,
           embeddingLength: embeddingVector.length,
-          createdAt: recordPayload.created_at,
-          updatedAt: recordPayload.updated_at
+          createdAt: nowIso,
+          updatedAt: nowIso
         });
       } catch (fsErr) {
         console.warn("[Shurefire Firestore Ingestion] Firestore mirror failed:", fsErr);
@@ -1823,17 +1884,17 @@ Return a valid JSON object strictly matching this schema:
 
       res.json({
         success: true,
-        message: "Successfully crawled and vectorized via Jina Reader & Gemini.",
+        message: "Successfully crawled and vectorized via Jina Reader & Gemini gemini-embedding-2.",
         record: {
-          id: recordPayload.id,
-          title: recordPayload.title,
-          content: recordPayload.content,
-          url: recordPayload.url,
-          material_category: recordPayload.material_category,
+          id: finalRecordId,
+          title: extractedTitle,
+          content: extractedContent,
+          url: cleanUrl,
+          material_category: category,
           embedding_dim: embeddingVector.length,
           embedding_sample: embeddingVector.slice(0, 5),
           saved_to_supabase: savedToSupabase,
-          created_at: recordPayload.created_at
+          created_at: nowIso
         }
       });
     } catch (err: any) {
@@ -1878,7 +1939,7 @@ Return a valid JSON object strictly matching this schema:
       status: "checking",
       latencyMs: 0,
       details: "Initializing model client",
-      model: "text-embedding-004 (768 dimensions)"
+      model: "gemini-embedding-2 (768 dimensions)"
     };
     try {
       const gemStart = Date.now();
@@ -1887,14 +1948,14 @@ Return a valid JSON object strictly matching this schema:
         // Quick probe
         geminiStatus.latencyMs = Date.now() - gemStart;
         geminiStatus.status = "operational";
-        geminiStatus.details = "Gemini AI active. 768-dim embeddings operational.";
+        geminiStatus.details = "Gemini AI active. gemini-embedding-2 (768-dim) operational.";
       } else {
-        geminiStatus.status = "operational";
-        geminiStatus.details = "Standard 768-dim deterministic vector generator standby.";
+        geminiStatus.status = "degraded";
+        geminiStatus.details = "GEMINI_API_KEY is not configured. Real gemini-embedding-2 requires an active API key.";
       }
     } catch (gErr: any) {
       geminiStatus.status = "degraded";
-      geminiStatus.details = gErr?.message || "Operating via deterministic vector fallback";
+      geminiStatus.details = gErr?.message || "Gemini embedding service unavailable";
     }
 
     // Check Jina Reader API
@@ -1948,88 +2009,130 @@ Return a valid JSON object strictly matching this schema:
         return;
       }
 
-      const blockId = id || `kb_${Date.now()}`;
       const category = material_category || "Cement";
       const nowIso = new Date().toISOString();
 
-      // Generate 768-dim embedding
+      // Generate 768-dim embedding via gemini-embedding-2
       const ai = getGeminiClient();
-      const embeddingVector = await generate768DimEmbedding(`${title || ""}\n\n${content.trim()}`, ai);
-
-      const payload = {
-        id: blockId,
-        title: title || `${category} Standard Spec`,
-        content_text: content.trim(),
-        content: content.trim(),
-        url: url || "",
-        material_category: category,
-        category: category,
-        rate: rate ? Number(rate) : null,
-        unit: unit || "",
-        embedding: embeddingVector,
-        updated_at: nowIso,
-        created_at: nowIso,
-        createdAt: nowIso
-      };
-
-      // Save/Upsert to Supabase
+      let embeddingVector: number[];
       try {
-        const supabase = getSupabase();
-        const { error } = await supabase
-          .from("knowledge_base")
-          .upsert({
-            id: blockId,
-            title: payload.title,
-            content_text: payload.content_text,
-            content: payload.content,
-            url: payload.url,
-            material_category: payload.material_category,
-            embedding: payload.embedding,
-            updated_at: payload.updated_at,
-            created_at: payload.created_at
-          });
-        
-        if (error) {
-          console.warn("[Shurefire Supabase] Upsert error, trying insert fallback:", error);
-          await supabase
-            .from("knowledge_base")
-            .insert({
-              id: blockId,
-              title: payload.title,
-              content_text: payload.content_text,
-              content: payload.content,
-              url: payload.url,
-              material_category: payload.material_category,
-              updated_at: payload.updated_at,
-              created_at: payload.created_at
-            });
-        }
-      } catch (err) {
-        console.log("[Shurefire Supabase] Knowledge base save table skipped or failed.");
+        embeddingVector = await generate768DimEmbedding(`${title || ""}\n\n${content.trim()}`, ai);
+      } catch (embErr: any) {
+        console.error("[Manual Knowledge Embedding Failure]", embErr?.message || embErr);
+        res.status(500).json({ error: embErr?.message || "Failed to generate 768-dim embedding via gemini-embedding-2" });
+        return;
       }
 
-      // Save to Firestore
+      const hasExistingUuid = isValidUuid(id);
+      let savedRecordId: string | null = null;
+      let savedToSupabase = false;
+
       try {
-        await setDoc(doc(db, "knowledge_base", blockId), {
-          id: blockId,
-          title: payload.title,
-          content: payload.content,
-          content_text: payload.content_text,
-          url: payload.url,
-          material_category: payload.material_category,
+        const supabase = getSupabase();
+        if (hasExistingUuid) {
+          // Existing record: preserve the valid UUID on upsert
+          const updatePayload: Record<string, any> = {
+            id: id.trim(),
+            title: title || `${category} Standard Spec`,
+            content_text: content.trim(),
+            content: content.trim(),
+            url: url || null,
+            material_category: category,
+            embedding: embeddingVector,
+            updated_at: nowIso
+          };
+
+          const { data: upsertData, error: upsertErr } = await supabase
+            .from("knowledge_base")
+            .upsert(updatePayload)
+            .select("id, title, content, content_text, url, material_category, created_at, updated_at")
+            .single();
+
+          if (!upsertErr && upsertData?.id) {
+            savedToSupabase = true;
+            savedRecordId = upsertData.id;
+          } else if (upsertErr) {
+            console.error("[Shurefire Supabase] Knowledge base upsert error:", upsertErr.message);
+            res.status(500).json({ error: `Supabase upsert error: ${upsertErr.message}` });
+            return;
+          }
+        } else {
+          // New record: DO NOT provide id, allow PostgreSQL gen_random_uuid() to generate it
+          const insertPayload: Record<string, any> = {
+            title: title || `${category} Standard Spec`,
+            content_text: content.trim(),
+            content: content.trim(),
+            url: url || null,
+            material_category: category,
+            embedding: embeddingVector,
+            created_at: nowIso,
+            updated_at: nowIso
+          };
+
+          const { data: insertData, error: insertErr } = await supabase
+            .from("knowledge_base")
+            .insert(insertPayload)
+            .select("id, title, content, content_text, url, material_category, created_at, updated_at")
+            .single();
+
+          if (!insertErr && insertData?.id) {
+            savedToSupabase = true;
+            savedRecordId = insertData.id;
+          } else if (insertErr) {
+            console.error("[Shurefire Supabase] Knowledge base insert error:", insertErr.message);
+            res.status(500).json({ error: `Supabase insert error: ${insertErr.message}` });
+            return;
+          }
+        }
+      } catch (err: any) {
+        console.error("[Shurefire Supabase] Knowledge base save exception:", err?.message || err);
+        res.status(500).json({ error: `Database save exception: ${err?.message || "Unknown database error"}` });
+        return;
+      }
+
+      const finalRecordId = savedRecordId || (hasExistingUuid ? id.trim() : crypto.randomUUID());
+
+      // Save to Firestore using real UUID for durability
+      try {
+        await setDoc(doc(db, "knowledge_base", finalRecordId), {
+          id: finalRecordId,
+          title: title || `${category} Standard Spec`,
+          content: content.trim(),
+          content_text: content.trim(),
+          url: url || null,
+          material_category: category,
           embeddingLength: embeddingVector.length,
           updatedAt: nowIso,
           createdAt: nowIso
         });
-        console.log(`[Shurefire Firestore] Knowledge block saved: ${blockId}`);
+        console.log(`[Shurefire Firestore] Knowledge block saved: ${finalRecordId}`);
       } catch (err) {
         console.error("[Shurefire Firestore] Knowledge base save collection failed:", err);
       }
 
-      res.json({ success: true, blockId, item: payload });
-    } catch (err) {
-      console.error(err);
-      res.status(500).json({ error: "Failed to add/edit knowledge block" });
+      const returnedItem = {
+        id: finalRecordId,
+        title: title || `${category} Standard Spec`,
+        content: content.trim(),
+        content_text: content.trim(),
+        url: url || "",
+        material_category: category,
+        embedding_dim: embeddingVector.length,
+        updated_at: nowIso,
+        created_at: nowIso
+      };
+
+      res.json({
+        success: true,
+        id: finalRecordId,
+        blockId: finalRecordId,
+        embedding_dim: embeddingVector.length,
+        saved_to_supabase: savedToSupabase,
+        item: returnedItem
+      });
+    } catch (err: any) {
+      console.error("[Admin Knowledge Failure]", err);
+      res.status(500).json({ error: err?.message || "Failed to add/edit knowledge block" });
     }
   });
 

@@ -158,7 +158,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         name: "Gemini Vector Engine",
         status: "checking",
         latencyMs: 0,
-        details: "Probing text-embedding-004 (768-dim)..."
+        details: "Probing gemini-embedding-2 (768-dim)..."
       },
       jina: {
         name: "Jina Reader API",
@@ -263,7 +263,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             name: "Gemini Vector Engine",
             status: "operational",
             latencyMs: 64,
-            details: "Standard 768-dim text-embedding-004 pipeline ready"
+            details: "Standard 768-dim gemini-embedding-2 pipeline ready"
           },
           jina: {
             name: "Jina Reader API",
@@ -429,13 +429,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
     setDeletingId(id);
     try {
-      await fetch(`/api/admin/knowledge/${id}`, { method: "DELETE" });
-      // Also trigger Supabase delete directly
-      const client = (typeof window !== "undefined" && window.dbClient) || getSupabase();
-      await client.from("knowledge_base").delete().eq("id", id);
-      setRecords((prev) => prev.filter((r) => r.id !== id));
-      if (inspectingRecord?.id === id) {
-        setInspectingRecord(null);
+      const res = await fetch(`/api/admin/knowledge/${id}`, { method: "DELETE" });
+      if (res.ok) {
+        setRecords((prev) => prev.filter((r) => r.id !== id));
+        if (inspectingRecord?.id === id) {
+          setInspectingRecord(null);
+        }
       }
     } catch (err) {
       console.warn("Delete error:", err);
@@ -1476,7 +1475,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         </div>
                         <div>
                           <h3 className="font-bold text-slate-900 text-sm">Gemini AI</h3>
-                          <p className="text-[11px] text-slate-400 font-mono">text-embedding-004</p>
+                          <p className="text-[11px] text-slate-400 font-mono">gemini-embedding-2</p>
                         </div>
                       </div>
                       <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-xs font-bold">
@@ -1492,7 +1491,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       </div>
                       <div className="flex justify-between text-slate-500">
                         <span>Model</span>
-                        <span className="font-semibold text-slate-800">text-embedding-004</span>
+                        <span className="font-semibold text-slate-800">gemini-embedding-2</span>
                       </div>
                       <div className="flex justify-between text-slate-500">
                         <span>Vector Normalization</span>

@@ -615,6 +615,27 @@ ${selectedDrawerRecord.content}`;
 
           {/* Right Navigation Controls */}
           <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => {
+                window.location.hash = "#/estimate";
+              }}
+              className="hidden lg:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-[#e2e8f0] bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 hover:text-[#ae2424] transition-colors cursor-pointer"
+              title="Open ShureEstimate Structural Engine"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-[#ae2424]" />
+              <span>ShureEstimate</span>
+            </button>
+
+            <button
+              onClick={() => {
+                window.location.hash = "#/procure";
+              }}
+              className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-[#e2e8f0] bg-white hover:bg-slate-50 text-xs font-semibold text-[#ae2424] transition-colors cursor-pointer"
+              title="Procure Materials with Shurefire"
+            >
+              <span>Procure</span>
+            </button>
+
             {onOpenAdmin && (
               <button
                 onClick={onOpenAdmin}

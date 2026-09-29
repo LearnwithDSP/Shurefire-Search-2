@@ -218,62 +218,23 @@ export async function adminCrawler(
     extractedContent = `Technical specifications and supplier price data indexed for ${category} from ${cleanUrl}.`;
   }
 
-  // 3. Save resulting record into Supabase public.knowledge_base with title, content, url, and material_category
-  const supabase = getSupabase();
-  const id = `kb_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-  const nowIso = new Date().toISOString();
-
-  const record: CrawledKnowledgeRecord = {
-    id,
-    title: extractedTitle,
-    content: extractedContent,
-    content_text: extractedContent,
-    url: cleanUrl,
-    material_category: category,
-    created_at: nowIso,
-    updated_at: nowIso
-  };
-
-  try {
-    const { data, error } = await supabase
-      .from("knowledge_base")
-      .upsert({
-        id: record.id,
-        title: record.title,
-        content: record.content,
-        content_text: record.content_text,
-        url: record.url,
-        material_category: record.material_category,
-        created_at: record.created_at,
-        updated_at: record.updated_at
-      })
-      .select();
-
-    if (error) {
-      // Fallback: minimal insert targeting public.knowledge_base
-      const { data: insertData, error: insertErr } = await supabase
-        .from("knowledge_base")
-        .insert({
-          id: record.id,
-          title: record.title,
-          content: record.content,
-          url: record.url,
-          material_category: record.material_category,
-          created_at: record.created_at
-        })
-        .select();
-
-      if (!insertErr && insertData && insertData[0]) {
-        return { success: true, record: insertData[0] };
-      }
-    } else if (data && data[0]) {
-      return { success: true, record: data[0] };
-    }
-  } catch (dbErr: any) {
-    console.warn("[Admin Crawler] Supabase write note:", dbErr?.message || dbErr);
+  // 3. Delegate indexing and vectorization to secure server endpoint /api/admin/crawl-ingest
+  const res = await fetch("/api/admin/crawl-ingest", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      url: cleanUrl,
+      material_category: category,
+      customTitle: extractedTitle
+    })
+  });
+  
+  const data = await res.json().catch(() => null);
+  if (res.ok && data?.record) {
+    return { success: true, record: data.record };
   }
-
-  return { success: true, record };
+  
+  throw new Error(data?.error || `Crawl ingestion failed with status ${res.status}`);
 }
 
 /**

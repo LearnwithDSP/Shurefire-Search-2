@@ -23,7 +23,8 @@ import {
   Send,
   SlidersHorizontal,
   Briefcase,
-  Mic
+  Mic,
+  Truck
 } from "lucide-react";
 import { getSupabase } from "./supabase";
 import { useVoiceToText } from "./useVoiceToText";
@@ -32,6 +33,8 @@ import { MaterialItem, MaterialCategory, Supplier } from "./types";
 import AdminLogin from "./components/AdminLogin";
 import AdminDashboard from "./components/AdminDashboard";
 import SearchResultsPage from "./components/SearchResultsPage";
+import ShureEstimatePage from "./components/ShureEstimatePage";
+import ProcureWithShurefirePage from "./components/ProcureWithShurefirePage";
 
 interface SpecCalculation {
   cementBags: number;
@@ -98,6 +101,9 @@ export default function App() {
   const [currentPath, setCurrentPath] = useState(
     typeof window !== "undefined" ? window.location.pathname : "/"
   );
+  const [currentHash, setCurrentHash] = useState(
+    typeof window !== "undefined" ? window.location.hash : ""
+  );
 
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -106,11 +112,19 @@ export default function App() {
     if (window.location.hash.includes("#shurefire-admin")) {
       setShowAdminModal(true);
     }
-    const handlePopState = () => {
+    const handleRouteSync = () => {
       setCurrentPath(window.location.pathname);
+      setCurrentHash(window.location.hash);
+      if (window.location.hash.includes("#shurefire-admin")) {
+        setShowAdminModal(true);
+      }
     };
-    window.addEventListener("popstate", handlePopState);
-    return () => window.removeEventListener("popstate", handlePopState);
+    window.addEventListener("popstate", handleRouteSync);
+    window.addEventListener("hashchange", handleRouteSync);
+    return () => {
+      window.removeEventListener("popstate", handleRouteSync);
+      window.removeEventListener("hashchange", handleRouteSync);
+    };
   }, []);
 
   // Sync window.dbClient
@@ -402,7 +416,12 @@ export default function App() {
     setQuery("");
     setActiveQuery("");
     setExpandedItemId(null);
-    window.location.hash = "#home";
+    window.location.hash = "";
+    setCurrentHash("");
+    if (window.location.pathname !== "/") {
+      window.history.pushState({}, "", "/");
+      setCurrentPath("/");
+    }
   };
 
   // Submit procurement RFQ
@@ -521,6 +540,44 @@ Source: Shurefire Sovereign Construction Search (https://shurefire.ng)`;
     );
   }
 
+  // Dedicated route support for ShureEstimate (#/estimate or /estimate)
+  const isEstimateRoute =
+    currentHash.toLowerCase() === "#/estimate" ||
+    currentHash.toLowerCase() === "#estimate" ||
+    currentPath.toLowerCase() === "/estimate";
+
+  if (isEstimateRoute) {
+    return (
+      <ShureEstimatePage
+        onNavigateHome={handleResetToLanding}
+        onNavigateProcure={() => {
+          window.location.hash = "#/procure";
+          setCurrentHash("#/procure");
+        }}
+        onOpenAdmin={() => setShowAdminModal(true)}
+      />
+    );
+  }
+
+  // Dedicated route support for Procure with Shurefire (#/procure or /procure)
+  const isProcureRoute =
+    currentHash.toLowerCase() === "#/procure" ||
+    currentHash.toLowerCase() === "#procure" ||
+    currentPath.toLowerCase() === "/procure";
+
+  if (isProcureRoute) {
+    return (
+      <ProcureWithShurefirePage
+        onNavigateHome={handleResetToLanding}
+        onNavigateEstimate={() => {
+          window.location.hash = "#/estimate";
+          setCurrentHash("#/estimate");
+        }}
+        onOpenAdmin={() => setShowAdminModal(true)}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-white text-[#0f172a] flex flex-col font-sans selection:bg-[#ae2424]/10 selection:text-[#ae2424]">
       
@@ -531,16 +588,41 @@ Source: Shurefire Sovereign Construction Search (https://shurefire.ng)`;
         <div className="flex-1 flex flex-col justify-between py-5 px-4 sm:px-8">
           
           {/* Top Bar Header */}
-          <header className="w-full max-w-7xl mx-auto flex items-center justify-end gap-3 select-none h-14">
+          <header className="w-full max-w-7xl mx-auto flex items-center justify-end gap-2.5 sm:gap-3 select-none h-14">
             
+            {/* Quick Nav: ShureEstimate */}
+            <button
+              onClick={() => {
+                window.location.hash = "#/estimate";
+                setCurrentHash("#/estimate");
+              }}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-[#e2e8f0] bg-white text-xs font-semibold text-[#0f172a] hover:border-[#ae2424]/40 hover:bg-[#f8fafc] transition-colors shadow-2xs cursor-pointer"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-[#ae2424]" />
+              <span>ShureEstimate</span>
+            </button>
+
+            {/* Quick Nav: Procure with Shurefire */}
+            <button
+              onClick={() => {
+                window.location.hash = "#/procure";
+                setCurrentHash("#/procure");
+              }}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-[#e2e8f0] bg-white text-xs font-semibold text-[#ae2424] hover:bg-rose-50/50 transition-colors shadow-2xs cursor-pointer"
+            >
+              <Truck className="w-3.5 h-3.5 text-[#ae2424]" />
+              <span className="hidden sm:inline">Procure Materials</span>
+              <span className="sm:hidden">Procure</span>
+            </button>
+
             {/* Status Pill: Admin Portal */}
             <button
               onClick={() => setShowAdminModal(true)}
-              className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-[#e2e8f0] bg-white text-xs font-semibold text-[#0f172a] hover:border-[#ae2424]/40 hover:bg-[#f8fafc] transition-colors shadow-2xs cursor-pointer"
+              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-[#e2e8f0] bg-white text-xs font-semibold text-[#0f172a] hover:border-[#ae2424]/40 hover:bg-[#f8fafc] transition-colors shadow-2xs cursor-pointer"
               title="Access Sovereign Admin Portal (#shurefire-admin)"
             >
               <span className="w-2 h-2 rounded-full bg-[#ae2424] animate-pulse"></span>
-              <span>Admin Portal</span>
+              <span>Admin</span>
             </button>
 
             {/* Grid Menu Icon */}
@@ -671,7 +753,11 @@ Source: Shurefire Sovereign Construction Search (https://shurefire.ng)`;
               {/* CTA Action Buttons */}
               <div className="flex items-center justify-center gap-3 pt-1">
                 <button
-                  type="submit"
+                  type="button"
+                  onClick={() => {
+                    window.location.hash = "#/estimate";
+                    setCurrentHash("#/estimate");
+                  }}
                   className="px-5 py-2.5 rounded-full bg-[#f8fafc] hover:bg-slate-100 border border-[#e2e8f0] hover:border-slate-300 text-xs sm:text-sm font-semibold text-[#0f172a] transition-all cursor-pointer shadow-2xs active:scale-95"
                 >
                   ShureEstimate
@@ -679,12 +765,8 @@ Source: Shurefire Sovereign Construction Search (https://shurefire.ng)`;
                 <button
                   type="button"
                   onClick={() => {
-                    if (!query.trim()) {
-                      setQuery("Dangote 50kg cement wholesale Lekki depot");
-                      executeSearch("Dangote 50kg cement wholesale Lekki depot");
-                    } else {
-                      executeSearch(query);
-                    }
+                    window.location.hash = "#/procure";
+                    setCurrentHash("#/procure");
                   }}
                   className="px-5 py-2.5 rounded-full bg-white hover:bg-slate-50 border border-[#e2e8f0] hover:border-[#ae2424]/40 text-xs sm:text-sm font-semibold text-[#ae2424] transition-all cursor-pointer shadow-2xs active:scale-95"
                 >
@@ -700,7 +782,25 @@ Source: Shurefire Sovereign Construction Search (https://shurefire.ng)`;
               <p className="text-[12px] font-normal">
                 Calculations powered by Gemini AI. Real-time pricing sourced from Shurefire Sovereign Marketplace.
               </p>
-              <div className="flex items-center gap-4 text-[12px]">
+              <div className="flex flex-wrap items-center justify-center sm:justify-end gap-4 text-[12px]">
+                <button
+                  onClick={() => {
+                    window.location.hash = "#/estimate";
+                    setCurrentHash("#/estimate");
+                  }}
+                  className="hover:underline text-[#0f172a] font-medium cursor-pointer"
+                >
+                  ShureEstimate
+                </button>
+                <button
+                  onClick={() => {
+                    window.location.hash = "#/procure";
+                    setCurrentHash("#/procure");
+                  }}
+                  className="hover:underline text-[#ae2424] font-medium cursor-pointer"
+                >
+                  Procure Materials
+                </button>
                 <span className="flex items-center gap-1 font-medium text-[#0f172a]">
                   <MapPin className="w-3.5 h-3.5 text-[#ae2424]" />
                   Lagos, Nigeria
