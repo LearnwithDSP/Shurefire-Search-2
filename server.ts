@@ -1197,8 +1197,17 @@ Generate the complete structured JSON response matching the schema. In the "sear
       const emailClean = String(email).trim().toLowerCase();
       const rawPassword = String(password);
 
-      // 1. Authenticate credentials ONLY with Supabase Auth
-      const supabase = getSupabase();
+      // 1. Authenticate credentials ONLY with Supabase Auth (stateless client to prevent session caching)
+      const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
+      const anonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "";
+      const supabase = createClient(url, anonKey, {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+          detectSessionInUrl: false
+        }
+      });
+
       let authUser: any = null;
 
       try {
@@ -1208,14 +1217,12 @@ Generate the complete structured JSON response matching the schema. In the "sear
         });
 
         if (error || !data?.user) {
-          console.warn("[Admin Auth] Supabase signInWithPassword rejected:", error?.message || "Invalid credentials");
           res.status(401).json({ error: "Invalid email or password." });
           return;
         }
 
         authUser = data.user;
       } catch (authErr: any) {
-        console.warn("[Admin Auth] Authentication notice:", authErr?.message || authErr);
         res.status(401).json({ error: "Invalid email or password." });
         return;
       }
@@ -1231,21 +1238,18 @@ Generate the complete structured JSON response matching the schema. In the "sear
           .single();
 
         if (profileErr || !profileData) {
-          console.warn("[Admin Auth] Profile not found for id:", authUser.id, profileErr?.message);
           res.status(403).json({ error: "Admin profile not found." });
           return;
         }
 
         profile = profileData;
       } catch (dbErr: any) {
-        console.warn("[Admin Auth] Database service role query notice:", dbErr?.message || dbErr);
         res.status(403).json({ error: "Admin profile not found." });
         return;
       }
 
       // 3. Only allow access when profile.role === "admin"
       if (profile.role !== "admin") {
-        console.warn(`[Admin Auth] User ${emailClean} (${authUser.id}) rejected: role is '${profile.role}'`);
         res.status(403).json({ error: "Your account is not authorized as an administrator." });
         return;
       }
