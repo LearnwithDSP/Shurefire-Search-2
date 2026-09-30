@@ -1388,6 +1388,163 @@ Generate the complete structured JSON response matching the schema. In the "sear
     return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(val.trim());
   };
 
+  interface QualityGateResult {
+    passed: boolean;
+    rejectionReason?: string;
+    category?: "bot_challenge" | "error_page" | "insufficient_content" | "login_wall";
+  }
+
+  // Phase 4A Crawler Quality Gate:
+  // Detects Cloudflare / security / challenge pages, error responses, login barriers,
+  // and obviously empty/unusable content BEFORE embedding generation or database insertion.
+  const evaluateCrawlerQualityGate = (
+    title?: string | null,
+    content?: string | null,
+    url?: string | null
+  ): QualityGateResult => {
+    const rawTitle = (title || "").trim();
+    const rawContent = (content || "").trim();
+    const normTitle = rawTitle.toLowerCase();
+    const normContent = rawContent.toLowerCase();
+
+    // 1. Detect Cloudflare, Akamai, PerimeterX, Datadome, Turnstile, or CAPTCHA Bot Challenges
+    const securityChallengeTitlePatterns = [
+      "just a moment",
+      "attention required",
+      "security verification",
+      "bot verification",
+      "checking your browser",
+      "verify you are human",
+      "are you human",
+      "human verification",
+      "ddos protection",
+      "please wait...",
+      "one more step",
+      "access denied",
+      "security service",
+      "shield square",
+      "cloudflare"
+    ];
+
+    const securityChallengeContentPatterns = [
+      "performing security verification",
+      "protect against malicious bots",
+      "security service to protect",
+      "checking your browser before accessing",
+      "checking if the site connection is secure",
+      "please enable cookies and reload the page",
+      "turn javascript on and reload",
+      "cloudflare ray id",
+      "cf-ray",
+      "ray id:",
+      "ddos protection by cloudflare",
+      "verify you are human by completing the action below",
+      "verify that you are human",
+      "completing the security check",
+      "unusual traffic from your computer network",
+      "enable javascript to view",
+      "pardon our interruption",
+      "press & hold to confirm you are a human",
+      "perimeterx",
+      "datadome"
+    ];
+
+    for (const pat of securityChallengeTitlePatterns) {
+      if (normTitle.includes(pat)) {
+        return {
+          passed: false,
+          category: "bot_challenge",
+          rejectionReason: `Crawler Quality Gate Rejected: Target page is an automated security or bot challenge ("${rawTitle}"). Cloudflare / anti-bot verification pages cannot be indexed.`
+        };
+      }
+    }
+
+    for (const pat of securityChallengeContentPatterns) {
+      if (normContent.includes(pat)) {
+        return {
+          passed: false,
+          category: "bot_challenge",
+          rejectionReason: `Crawler Quality Gate Rejected: Target page triggered automated bot mitigation or security verification ("${pat}"). No usable construction technical data could be extracted.`
+        };
+      }
+    }
+
+    // 2. Detect Standard HTTP Error Pages (404, 403, 500, 502, 503)
+    const errorPagePatterns = [
+      "404 not found",
+      "404 - not found",
+      "page not found",
+      "the page you are looking for does not exist",
+      "the page you requested could not be found",
+      "502 bad gateway",
+      "503 service unavailable",
+      "504 gateway timeout",
+      "internal server error",
+      "403 forbidden",
+      "error 404",
+      "error 500"
+    ];
+
+    for (const pat of errorPagePatterns) {
+      if (
+        normTitle === pat ||
+        normTitle.startsWith(pat) ||
+        (normContent.length < 500 && normContent.includes(pat))
+      ) {
+        return {
+          passed: false,
+          category: "error_page",
+          rejectionReason: `Crawler Quality Gate Rejected: Target page returned an HTTP error or missing page indicator ("${pat}").`
+        };
+      }
+    }
+
+    // 3. Detect Login / Paywall / Auth Gateways
+    const loginWallPatterns = [
+      "sign in to continue",
+      "please log in to access",
+      "login to your account",
+      "you need to sign in",
+      "access to this page is restricted",
+      "members only content"
+    ];
+
+    if (normContent.length < 600) {
+      for (const pat of loginWallPatterns) {
+        if (normTitle.includes(pat) || normContent.includes(pat)) {
+          return {
+            passed: false,
+            category: "login_wall",
+            rejectionReason: `Crawler Quality Gate Rejected: Target URL is locked behind an authentication or login screen ("${pat}").`
+          };
+        }
+      }
+    }
+
+    // 4. Detect Empty or Obviously Unusable Content
+    // Strip markdown images (![...](...)), markdown links, raw HTML tags, and markdown formatting characters
+    const cleanText = rawContent
+      .replace(/!\[.*?\]\(.*?\)/g, "") // strip markdown images
+      .replace(/\[(.*?)\]\(.*?\)/g, "$1") // unwrap markdown links
+      .replace(/<[^>]*>/g, " ") // remove HTML tags
+      .replace(/[#*_~`>|-]/g, " ") // remove markdown syntax chars
+      .replace(/\s+/g, " ")
+      .trim();
+
+    // Calculate readable word count (excluding standalone URLs)
+    const words = cleanText.split(/\s+/).filter(w => w.length > 1 && !/^https?:\/\//i.test(w));
+
+    if (cleanText.length < 150 || words.length < 25) {
+      return {
+        passed: false,
+        category: "insufficient_content",
+        rejectionReason: `Crawler Quality Gate Rejected: Extracted content is empty or contains insufficient readable text (${cleanText.length} characters / ${words.length} words found; minimum 150 characters and 25 words required). The page may require client-side JavaScript or be unavailable.`
+      };
+    }
+
+    return { passed: true };
+  };
+
   // Helper: Real 768-dim embedding vector via Gemini gemini-embedding-2
   const generate768DimEmbedding = async (text: string, ai: GoogleGenAI | null): Promise<number[]> => {
     if (!ai) {
@@ -1773,21 +1930,30 @@ Return a valid JSON object strictly matching this schema:
               .slice(0, 10000);
           }
         } catch (directErr) {
-          console.warn("[Shurefire Direct Fetch] Fallback also failed, using standard metadata snapshot.");
+          console.warn("[Shurefire Direct Fetch] Fallback request failed.");
         }
       }
 
-      // If content is still empty, synthesize an authoritative briefing snapshot for the link
-      if (!extractedContent || extractedContent.length < 50) {
-        const domain = new URL(cleanUrl).hostname;
-        extractedTitle = extractedTitle || `${category} Market Rate Bulletin (${domain})`;
-        extractedContent = `Source URL: ${cleanUrl}\nDomain: ${domain}\nCategory: ${category}\nMarket Intelligence Briefing: Standard market pricing and technical grade specifications retrieved for ${category}. Current retail and wholesale benchmarks in Lagos/Abuja confirm steady local availability complying with NIS structural standards.`;
-      }
-
-      if (!extractedTitle) {
+      if (!extractedTitle && extractedContent) {
         // Derive title from URL path or first line
         const firstLine = extractedContent.split("\n")[0].replace(/^#+\s*/, "").slice(0, 80).trim();
         extractedTitle = firstLine || `${category} Intelligence Briefing`;
+      }
+
+      // =========================================================================
+      // PHASE 4A CRAWLER QUALITY GATE:
+      // Verify extracted content BEFORE generating 768-dim Gemini embeddings or
+      // inserting into Supabase public.knowledge_base.
+      // Rejects Cloudflare bot challenges, security verification pages, HTTP errors,
+      // and empty/obviously unusable pages.
+      // =========================================================================
+      const qualityCheck = evaluateCrawlerQualityGate(extractedTitle, extractedContent, cleanUrl);
+      if (!qualityCheck.passed) {
+        console.warn(`[Phase 4A Quality Gate REJECTED] URL: ${cleanUrl} | Reason: ${qualityCheck.rejectionReason}`);
+        res.status(422).json({
+          error: qualityCheck.rejectionReason || "Target page content was rejected by the crawler quality gate."
+        });
+        return;
       }
 
       // 2. Vector Embedding Generation (768-dim) via Gemini gemini-embedding-2
@@ -1983,6 +2149,16 @@ Return a valid JSON object strictly matching this schema:
       const { id, title, content, material_category, url, rate, unit } = req.body;
       if (!content || !content.trim()) {
         res.status(400).json({ error: "Content is required" });
+        return;
+      }
+
+      // PHASE 4A QUALITY GATE (Manual Entry Validation):
+      // Prevent inserting Cloudflare challenge pages or obviously unusable content manually
+      const qualityCheck = evaluateCrawlerQualityGate(title, content, url);
+      if (!qualityCheck.passed) {
+        res.status(422).json({
+          error: qualityCheck.rejectionReason || "Submitted content was rejected by the quality gate."
+        });
         return;
       }
 
