@@ -2,7 +2,6 @@ import express from "express";
 import crypto from "crypto";
 import path from "path";
 import { fileURLToPath } from "url";
-import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { queryLiveStockSuppliers, NIGERIAN_SUPPLIERS, INITIAL_MATERIALS } from "./src/mockDatabase.js";
@@ -11,8 +10,12 @@ import { db } from "./src/firebase.js";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { getSupabase, isSupabaseConfigured } from "./src/supabase.js";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const currentFilename = typeof __filename !== "undefined"
+  ? __filename
+  : (typeof import.meta !== "undefined" && import.meta.url ? fileURLToPath(import.meta.url) : "");
+const currentDirname = typeof __dirname !== "undefined"
+  ? __dirname
+  : (currentFilename ? path.dirname(currentFilename) : process.cwd());
 
 export const app = express();
 const PORT = 3000;
@@ -2469,6 +2472,7 @@ Be highly accurate. Structure the response strictly according to the specified s
     }
 
     if (process.env.NODE_ENV !== "production") {
+      const { createServer: createViteServer } = await import("vite");
       const vite = await createViteServer({
         server: { middlewareMode: true },
         appType: "spa",

@@ -1,5 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "http";
-import { app } from "../server.ts";
+import serverModule, { app as namedApp } from "../server.js";
+
+const appInstance = namedApp || (serverModule as any)?.app || serverModule;
 
 /**
  * Vercel Serverless Function Bridge:
@@ -7,5 +9,6 @@ import { app } from "../server.ts";
  * Preserves all existing Express routes, Gemini embeddings, and Supabase operations.
  */
 export default function handler(req: IncomingMessage, res: ServerResponse) {
-  return (app as any)(req, res);
+  return (appInstance as any)(req, res);
 }
+
