@@ -34,6 +34,7 @@ import {
 import { validateAndSanitizeUrl, crawlSource } from "../crawler";
 import { INITIAL_MATERIALS, NIGERIAN_SUPPLIERS } from "../mockDatabase";
 import { MaterialCategory } from "../types";
+import KnowledgeTable from "./KnowledgeTable";
 
 export type AdminNavSection =
   | "overview"
@@ -1083,9 +1084,10 @@ export default function AdminDashboard({
                   <div className="flex items-center gap-2">
                     <button
                       onClick={() => setActiveSection("knowledge-crawl")}
-                      className="px-3.5 py-1.5 text-xs font-semibold text-white bg-[#ae2424] hover:bg-[#961f1f] rounded-lg transition-colors cursor-pointer"
+                      className="px-3.5 py-1.5 text-xs font-semibold text-white bg-[#ae2424] hover:bg-[#961f1f] rounded-lg transition-colors cursor-pointer flex items-center gap-1.5"
                     >
-                      Crawl New Source
+                      <PlusCircle className="w-3.5 h-3.5" />
+                      <span>Crawl New Source</span>
                     </button>
                     <button
                       onClick={() => setActiveSection("knowledge-add")}
@@ -1096,181 +1098,16 @@ export default function AdminDashboard({
                   </div>
                 </div>
 
-                {/* Filter and Search Bar */}
-                <div className="flex flex-col md:flex-row gap-3">
-                  <div className="relative flex-1">
-                    <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                    <input
-                      type="text"
-                      placeholder="Search knowledge by title, content, URL, or category..."
-                      value={knowledgeSearch}
-                      onChange={e => {
-                        setKnowledgeSearch(e.target.value);
-                        setCurrentPage(1);
-                      }}
-                      className="w-full pl-9 pr-4 py-2 bg-white border border-[#e5e7eb] rounded-lg text-xs text-slate-900 focus:outline-hidden focus:border-[#ae2424]"
-                    />
-                  </div>
-
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <select
-                      value={selectedCategory}
-                      onChange={e => {
-                        setSelectedCategory(e.target.value);
-                        setCurrentPage(1);
-                      }}
-                      className="bg-white border border-[#e5e7eb] text-xs text-slate-700 rounded-lg px-3 py-2 focus:outline-hidden focus:border-[#ae2424]"
-                    >
-                      <option value="All">All Categories ({records.length})</option>
-                      {CATEGORIES.map(cat => (
-                        <option key={cat} value={cat}>{cat}</option>
-                      ))}
-                    </select>
-
-                    <select
-                      value={selectedEmbeddingFilter}
-                      onChange={e => {
-                        setSelectedEmbeddingFilter(e.target.value);
-                        setCurrentPage(1);
-                      }}
-                      className="bg-white border border-[#e5e7eb] text-xs text-slate-700 rounded-lg px-3 py-2 focus:outline-hidden focus:border-[#ae2424]"
-                    >
-                      <option value="All">All Embedding States</option>
-                      <option value="Embedded">768D Embedded Only</option>
-                    </select>
-
-                    <select
-                      value={sortOrder}
-                      onChange={e => setSortOrder(e.target.value as any)}
-                      className="bg-white border border-[#e5e7eb] text-xs text-slate-700 rounded-lg px-3 py-2 focus:outline-hidden focus:border-[#ae2424]"
-                    >
-                      <option value="newest">Sort: Newest First</option>
-                      <option value="oldest">Sort: Oldest First</option>
-                      <option value="title">Sort: Title A-Z</option>
-                    </select>
-                  </div>
-                </div>
-
-                {/* Knowledge Table */}
-                <div className="bg-white border border-[#e5e7eb] rounded-xl shadow-xs overflow-hidden">
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs">
-                      <thead className="bg-slate-50 border-b border-[#e5e7eb] text-slate-500 font-mono">
-                        <tr>
-                          <th className="py-3 px-4 font-semibold">Title</th>
-                          <th className="py-3 px-4 font-semibold">Category</th>
-                          <th className="py-3 px-4 font-semibold">Source</th>
-                          <th className="py-3 px-4 font-semibold">Embedding</th>
-                          <th className="py-3 px-4 font-semibold">Updated</th>
-                          <th className="py-3 px-4 font-semibold text-right">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {paginatedKnowledge.length === 0 ? (
-                          <tr>
-                            <td colSpan={6} className="py-12 text-center text-slate-500">
-                              No knowledge records found matching your filters.
-                            </td>
-                          </tr>
-                        ) : (
-                          paginatedKnowledge.map(record => (
-                            <tr key={record.id} className="hover:bg-slate-50/60 transition-colors">
-                              <td className="py-3 px-4 max-w-[280px]">
-                                <div className="font-semibold text-slate-900 truncate" title={record.title}>
-                                  {record.title}
-                                </div>
-                                <div className="text-[11px] text-slate-400 font-mono truncate">
-                                  ID: {record.id.slice(0, 18)}...
-                                </div>
-                              </td>
-
-                              <td className="py-3 px-4">
-                                <span className="font-medium text-slate-700">
-                                  {record.material_category}
-                                </span>
-                              </td>
-
-                              <td className="py-3 px-4 max-w-[200px]">
-                                {record.url ? (
-                                  <a
-                                    href={record.url}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="text-slate-600 hover:text-[#ae2424] inline-flex items-center gap-1 truncate"
-                                  >
-                                    <span className="truncate">{new URL(record.url).hostname}</span>
-                                    <ExternalLink className="w-3 h-3 shrink-0" />
-                                  </a>
-                                ) : (
-                                  <span className="text-slate-400">Manual Spec</span>
-                                )}
-                              </td>
-
-                              <td className="py-3 px-4">
-                                <span className="font-mono text-emerald-700 font-medium">
-                                  768D Embedded
-                                </span>
-                              </td>
-
-                              <td className="py-3 px-4 text-slate-500 font-mono text-[11px] whitespace-nowrap">
-                                {record.updatedAt
-                                  ? new Date(record.updatedAt).toLocaleDateString()
-                                  : "Recently"}
-                              </td>
-
-                              <td className="py-3 px-4 text-right whitespace-nowrap">
-                                <div className="flex items-center justify-end gap-1">
-                                  <button
-                                    onClick={() => setViewingRecord(record)}
-                                    title="View Record Details"
-                                    className="p-1.5 text-slate-400 hover:text-slate-700 rounded-md"
-                                  >
-                                    <Eye className="w-4 h-4" />
-                                  </button>
-                                  <button
-                                    onClick={() => handleDeleteRecord(record.id)}
-                                    title="Delete from Supabase"
-                                    className="p-1.5 text-slate-400 hover:text-rose-600 rounded-md"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  {/* Pagination Footer */}
-                  <div className="py-3 px-4 bg-slate-50 border-t border-[#e5e7eb] flex items-center justify-between text-xs text-slate-500">
-                    <div>
-                      Showing {filteredKnowledge.length > 0 ? (currentPage - 1) * itemsPerPage + 1 : 0} to{" "}
-                      {Math.min(currentPage * itemsPerPage, filteredKnowledge.length)} of {filteredKnowledge.length} records
-                    </div>
-
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-                        disabled={currentPage <= 1}
-                        className="px-2.5 py-1 bg-white border border-slate-200 rounded disabled:opacity-40"
-                      >
-                        Prev
-                      </button>
-                      <span className="font-mono px-2">
-                        {currentPage} / {totalPages}
-                      </span>
-                      <button
-                        onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-                        disabled={currentPage >= totalPages}
-                        className="px-2.5 py-1 bg-white border border-slate-200 rounded disabled:opacity-40"
-                      >
-                        Next
-                      </button>
-                    </div>
-                  </div>
-                </div>
+                {/* Modern Knowledge Table Component */}
+                <KnowledgeTable
+                  records={records}
+                  isLoading={isLoadingRecords}
+                  onViewRecord={record => setViewingRecord(record)}
+                  onDeleteRecord={handleDeleteRecord}
+                  onCrawlClick={() => setActiveSection("knowledge-crawl")}
+                  onAddClick={() => setActiveSection("knowledge-add")}
+                  onRefresh={fetchKnowledgeRecords}
+                />
               </div>
             )}
 

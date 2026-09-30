@@ -1208,14 +1208,14 @@ Generate the complete structured JSON response matching the schema. In the "sear
         });
 
         if (error || !data?.user) {
-          console.error("[Admin Auth] Supabase signInWithPassword failed:", error?.message || "Invalid credentials");
+          console.warn("[Admin Auth] Supabase signInWithPassword rejected:", error?.message || "Invalid credentials");
           res.status(401).json({ error: "Invalid email or password." });
           return;
         }
 
         authUser = data.user;
       } catch (authErr: any) {
-        console.error("[Admin Auth] Authentication exception:", authErr?.message || authErr);
+        console.warn("[Admin Auth] Authentication notice:", authErr?.message || authErr);
         res.status(401).json({ error: "Invalid email or password." });
         return;
       }
@@ -1231,14 +1231,14 @@ Generate the complete structured JSON response matching the schema. In the "sear
           .single();
 
         if (profileErr || !profileData) {
-          console.error("[Admin Auth] Profile not found for id:", authUser.id, profileErr?.message);
+          console.warn("[Admin Auth] Profile not found for id:", authUser.id, profileErr?.message);
           res.status(403).json({ error: "Admin profile not found." });
           return;
         }
 
         profile = profileData;
       } catch (dbErr: any) {
-        console.error("[Admin Auth] Database service role query error:", dbErr?.message || dbErr);
+        console.warn("[Admin Auth] Database service role query notice:", dbErr?.message || dbErr);
         res.status(403).json({ error: "Admin profile not found." });
         return;
       }
