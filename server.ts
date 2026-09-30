@@ -1305,14 +1305,11 @@ Generate the complete structured JSON response matching the schema. In the "sear
       }
 
       const emailClean = email.trim().toLowerCase();
-      const userDocId = `usr_${crypto.createHash("sha1").update(emailClean).digest("hex")}`;
-      const hashedPassword = crypto.createHash("sha256").update(password).digest("hex");
       const isSupaActive = isSupabaseConfigured();
 
-      let authenticatedUser: any = null;
-
-      // 1. Try Supabase Auth first if configured
+      // 1. Authenticate via Supabase Auth when configured
       if (isSupaActive) {
+        let authUser: any = null;
         try {
           const supabase = getSupabase();
           const { data, error } = await supabase.auth.signInWithPassword({
@@ -1320,63 +1317,94 @@ Generate the complete structured JSON response matching the schema. In the "sear
             password: password
           });
 
-          if (!error && data?.user) {
-            // Check their profile role in Supabase
-            let role = "admin";
-            try {
-              const { data: profile } = await supabase
-                .from("profiles")
-                .select("role")
-                .eq("id", data.user.id)
-                .single();
-              if (profile) role = profile.role;
-            } catch (pErr) {
-              console.warn("[Server Admin Login] Failed role lookup on Supabase, checking Firestore fallback.");
-            }
-
-            authenticatedUser = {
-              id: data.user.id,
-              email: data.user.email,
-              fullName: data.user.user_metadata?.full_name || "Sovereign Desk",
-              role: role
-            };
+          if (error || !data?.user) {
+            console.error("[Server Admin Login] Supabase Auth failure:", error?.message || "Invalid credentials");
+            res.status(401).json({ error: "Invalid email or password." });
+            return;
           }
-        } catch (supaErr) {
-          console.warn("[Server Admin Login] Supabase auth attempt skipped/failed:", supaErr);
-        }
-      }
 
-      // 2. Fallback to Firestore credentials lookup if Supabase is unconfigured or authentication did not succeed
-      if (!authenticatedUser) {
+          authUser = data.user;
+        } catch (supaErr: any) {
+          console.error("[Server Admin Login] Supabase Auth unexpected exception:", supaErr?.message || supaErr);
+          res.status(401).json({ error: "Invalid email or password." });
+          return;
+        }
+
+        // 2. Admin profile lookup using dedicated server-side getAdminSupabase()
+        let profile: any = null;
         try {
-          const docSnap = await getDoc(doc(db, "profiles", userDocId));
-          if (docSnap.exists()) {
-            const data = docSnap.data();
-            if (data.passwordHash === hashedPassword) {
-              authenticatedUser = {
-                id: data.id,
-                email: data.email,
-                fullName: data.fullName || "Sovereign Officer",
-                role: data.role || "admin"
-              };
-            } else {
-              res.status(401).json({ error: "Verification failed. Invalid password." });
-              return;
-            }
+          const adminSupabase = getAdminSupabase();
+          const { data: profileData, error: profileErr } = await adminSupabase
+            .from("profiles")
+            .select("role")
+            .eq("id", authUser.id)
+            .single();
+
+          if (profileErr || !profileData) {
+            console.error("[Server Admin Login] Profile lookup error:", profileErr?.message || "Profile not found");
+            res.status(403).json({ error: "Admin profile not found." });
+            return;
           }
-        } catch (fsErr) {
-          console.error("[Server Admin Login] Firestore lookup error:", fsErr);
+
+          profile = profileData;
+        } catch (adminErr: any) {
+          console.error("[Server Admin Login] Admin service role query error:", adminErr?.message || adminErr);
+          res.status(403).json({ error: "Admin profile not found." });
+          return;
         }
+
+        // 3. Role authorization check
+        if (profile.role !== "admin") {
+          res.status(403).json({ error: "Your account is not authorized as an administrator." });
+          return;
+        }
+
+        // 4. Successful admin login response
+        res.json({
+          success: true,
+          user: {
+            id: authUser.id,
+            email: authUser.email,
+            fullName: authUser.user_metadata?.full_name || "Sovereign Desk",
+            role: "admin"
+          }
+        });
+        return;
       }
 
-      if (authenticatedUser) {
+      // 5. Fallback to Firestore credentials lookup only if Supabase is unconfigured
+      const userDocId = `usr_${crypto.createHash("sha1").update(emailClean).digest("hex")}`;
+      const hashedPassword = crypto.createHash("sha256").update(password).digest("hex");
+      let authenticatedUser: any = null;
+
+      try {
+        const docSnap = await getDoc(doc(db, "profiles", userDocId));
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          if (data.passwordHash === hashedPassword) {
+            authenticatedUser = {
+              id: data.id,
+              email: data.email,
+              fullName: data.fullName || "Sovereign Officer",
+              role: data.role || "admin"
+            };
+          } else {
+            res.status(401).json({ error: "Invalid email or password." });
+            return;
+          }
+        }
+      } catch (fsErr) {
+        console.error("[Server Admin Login] Firestore lookup error:", fsErr);
+      }
+
+      if (authenticatedUser && authenticatedUser.role === "admin") {
         res.json({ success: true, user: authenticatedUser });
       } else {
         res.status(401).json({ error: "Verification failed. Authorized 'admin' personnel only." });
       }
     } catch (err: any) {
-      console.error(err);
-      res.status(500).json({ error: err?.message || "Internal server verification failure." });
+      console.error("[Server Admin Login] Fatal error:", err);
+      res.status(500).json({ error: "Internal server verification failure." });
     }
   });
 
