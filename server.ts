@@ -1216,7 +1216,23 @@ Generate the complete structured JSON response matching the schema. In the "sear
       // 1. Authenticate credentials ONLY with Supabase Auth (stateless client to prevent session caching)
       const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
       const anonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "";
-      const supabase = createClient(url, anonKey, {
+
+      // Safe diagnostic metadata (no secret keys, tokens, or passwords logged)
+      let supabaseHost = "NOT_CONFIGURED";
+      if (url) {
+        try {
+          const parsed = new URL(url.startsWith("http") ? url : `https://${url}`);
+          supabaseHost = parsed.hostname;
+        } catch {
+          supabaseHost = "INVALID_URL";
+        }
+      }
+      const hasAnonKey = Boolean(anonKey && anonKey.trim().length > 0);
+      const hasServiceRoleKey = Boolean(
+        process.env.SUPABASE_SERVICE_ROLE_KEY && process.env.SUPABASE_SERVICE_ROLE_KEY.trim().length > 0
+      );
+
+      const supabase = createClient(url || "https://placeholder.supabase.co", anonKey || "placeholder-key", {
         auth: {
           persistSession: false,
           autoRefreshToken: false,
@@ -1233,12 +1249,36 @@ Generate the complete structured JSON response matching the schema. In the "sear
         });
 
         if (error || !data?.user) {
+          console.log(
+            `[ADMIN AUTH DIAGNOSTIC]\n` +
+            `Supabase host: ${supabaseHost}\n` +
+            `ANON key configured: ${hasAnonKey ? "YES" : "NO"}\n` +
+            `SERVICE ROLE configured: ${hasServiceRoleKey ? "YES" : "NO"}\n` +
+            `Auth error code: ${error?.code || "NONE"}\n` +
+            `Auth error status: ${error?.status || "401"}\n` +
+            `Auth error message: ${error?.message || "No user returned"}`
+          );
           res.status(401).json({ error: "Invalid email or password." });
           return;
         }
 
         authUser = data.user;
+        console.log(
+          `[ADMIN AUTH DIAGNOSTIC]\n` +
+          `Supabase Auth SUCCESS\n` +
+          `User ID: ${authUser.id}\n` +
+          `Email: ${authUser.email}`
+        );
       } catch (authErr: any) {
+        console.log(
+          `[ADMIN AUTH DIAGNOSTIC]\n` +
+          `Supabase host: ${supabaseHost}\n` +
+          `ANON key configured: ${hasAnonKey ? "YES" : "NO"}\n` +
+          `SERVICE ROLE configured: ${hasServiceRoleKey ? "YES" : "NO"}\n` +
+          `Auth error code: ${authErr?.code || "EXCEPTION"}\n` +
+          `Auth error status: ${authErr?.status || "500"}\n` +
+          `Auth error message: ${authErr?.message || String(authErr)}`
+        );
         res.status(401).json({ error: "Invalid email or password." });
         return;
       }
