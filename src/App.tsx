@@ -136,58 +136,30 @@ export default function App() {
 
   // Fetch admin data when logged in
   const fetchAdminData = useCallback(async () => {
-    // 1. Leads fetch with resilient direct Supabase fallback
+    // 1. Leads fetch
     try {
       const leadsRes = await fetch("/api/admin/leads");
       if (leadsRes.ok) {
-        const leadsData = await leadsRes.json();
+        const leadsData = await leadsRes.json().catch(() => null);
         if (Array.isArray(leadsData)) {
           setLeadsList(leadsData);
         }
-      } else {
-        const client = (typeof window !== "undefined" && window.dbClient) || getSupabase();
-        const { data } = await client.from("leads").select("*").order("created_at", { ascending: false });
-        if (data && Array.isArray(data)) {
-          setLeadsList(data);
-        }
       }
-    } catch {
-      try {
-        const client = (typeof window !== "undefined" && window.dbClient) || getSupabase();
-        const { data } = await client.from("leads").select("*").order("created_at", { ascending: false });
-        if (data && Array.isArray(data)) {
-          setLeadsList(data);
-        }
-      } catch {
-        // Graceful fallback to retain current state
-      }
+    } catch (err) {
+      console.warn("[Shurefire App] Leads fetch notice:", err);
     }
 
-    // 2. Knowledge fetch with resilient direct Supabase fallback
+    // 2. Knowledge fetch
     try {
       const kbRes = await fetch("/api/admin/knowledge");
       if (kbRes.ok) {
-        const kbData = await kbRes.json();
+        const kbData = await kbRes.json().catch(() => null);
         if (Array.isArray(kbData)) {
           setKnowledgeList(kbData);
         }
-      } else {
-        const client = (typeof window !== "undefined" && window.dbClient) || getSupabase();
-        const { data } = await client.from("knowledge_base").select("*");
-        if (data && Array.isArray(data)) {
-          setKnowledgeList(data);
-        }
       }
-    } catch {
-      try {
-        const client = (typeof window !== "undefined" && window.dbClient) || getSupabase();
-        const { data } = await client.from("knowledge_base").select("*");
-        if (data && Array.isArray(data)) {
-          setKnowledgeList(data);
-        }
-      } catch {
-        // Graceful fallback to retain current state
-      }
+    } catch (err) {
+      console.warn("[Shurefire App] Knowledge fetch notice:", err);
     }
   }, []);
 

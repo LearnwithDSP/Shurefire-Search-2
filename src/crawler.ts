@@ -136,17 +136,26 @@ export async function crawlSource(
     throw new Error(validation.error || "A valid, well-formed URL is required.");
   }
 
-  const res = await fetch("/api/admin/crawl-ingest", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      url: validation.sanitizedUrl,
-      material_category: materialCategory,
-      title: customTitle,
-      customTitle: customTitle,
-      description: customDescription
-    })
-  });
+  let res: Response;
+  try {
+    res = await fetch("/api/admin/crawl-ingest", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        url: validation.sanitizedUrl,
+        material_category: materialCategory,
+        title: customTitle,
+        customTitle: customTitle,
+        description: customDescription
+      })
+    });
+  } catch (netErr: any) {
+    throw new Error(
+      netErr?.message === "Failed to fetch"
+        ? "Network connection to Shurefire crawler service was interrupted. Please check your connection and retry."
+        : (netErr?.message || "Failed to connect to crawler ingestion service.")
+    );
+  }
 
   const data = await res.json().catch(() => null);
 

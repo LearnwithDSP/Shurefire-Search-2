@@ -44,40 +44,55 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({
     setIsLoading(true);
 
     try {
-      // Authenticate directly against Supabase Auth via window.dbClient.auth.signInWithPassword({ email, password })
-      const client = (typeof window !== "undefined" && window.dbClient)
-        ? window.dbClient
-        : getSupabase();
-
-      if (!client?.auth) {
-        throw new Error("Supabase Auth client is not initialized.");
-      }
-
-      const { data, error } = await client.auth.signInWithPassword({
-        email: cleanEmail,
-        password
+      // 1. Authenticate via server-side proxy route to avoid cross-origin / iframe "Failed to fetch" errors
+      const res = await fetch("/api/admin/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: cleanEmail, password })
       });
+      const data = await res.json().catch(() => null);
 
-      if (error) {
-        // Handle invalid credentials gracefully with a clean inline error alert container
-        if (error.message?.toLowerCase().includes("invalid login credentials")) {
-          setErrorMessage("Invalid login credentials. Please check your email and password.");
-        } else if (error.message?.toLowerCase().includes("email not confirmed")) {
-          setErrorMessage("Email address has not been confirmed yet.");
-        } else {
-          setErrorMessage(error.message || "Authentication failed. Please try again.");
-        }
-        return;
-      }
-
-      // Upon successful session creation, execute onLoginSuccess(data.user) or redirect directly to /admin/dashboard
-      if (data && data.user) {
+      if (res.ok && data?.user) {
         if (onLoginSuccess) {
           onLoginSuccess(data.user);
         } else if (typeof window !== "undefined") {
           window.location.href = redirectTo;
         }
+        return;
       }
+
+      if (data?.error && !data.error.includes("Failed to fetch")) {
+        setErrorMessage(data.error);
+        return;
+      }
+
+      // 2. Client-side fallback if server-side route is unreachable
+      const client = (typeof window !== "undefined" && window.dbClient)
+        ? window.dbClient
+        : getSupabase();
+
+      if (client?.auth) {
+        const { data: supaData, error: supaErr } = await client.auth.signInWithPassword({
+          email: cleanEmail,
+          password
+        });
+
+        if (!supaErr && supaData?.user) {
+          if (onLoginSuccess) {
+            onLoginSuccess(supaData.user);
+          } else if (typeof window !== "undefined") {
+            window.location.href = redirectTo;
+          }
+          return;
+        }
+
+        if (supaErr) {
+          setErrorMessage(supaErr.message || "Invalid credentials.");
+          return;
+        }
+      }
+
+      setErrorMessage("Authentication failed. Please check your credentials.");
     } catch (err: any) {
       setErrorMessage(err?.message || "An unexpected error occurred during authentication.");
     } finally {
