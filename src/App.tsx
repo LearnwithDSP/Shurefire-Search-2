@@ -89,9 +89,35 @@ export default function App() {
   const [copiedQuote, setCopiedQuote] = useState(false);
 
   // Admin Portal state
-  const [adminEmail, setAdminEmail] = useState("ramonbisola1@gmail.com");
+  const [adminEmail, setAdminEmail] = useState(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const stored = localStorage.getItem("shurefire_admin_session");
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          return parsed?.email || "";
+        }
+      } catch (e) {
+        return "";
+      }
+    }
+    return "";
+  });
   const [adminPassword, setAdminPassword] = useState("");
-  const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
+  const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const stored = localStorage.getItem("shurefire_admin_session");
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          return !!(parsed && parsed.id && parsed.role === "admin");
+        }
+      } catch (e) {
+        return false;
+      }
+    }
+    return false;
+  });
   const [adminTab, setAdminTab] = useState<"leads" | "knowledge">("leads");
   const [leadsList, setLeadsList] = useState<any[]>([]);
   const [knowledgeList, setKnowledgeList] = useState<any[]>([]);
@@ -106,6 +132,34 @@ export default function App() {
   );
 
   const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Validate persisted admin session against server
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const stored = localStorage.getItem("shurefire_admin_session");
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed && parsed.id) {
+            fetch("/api/admin/verify", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ userId: parsed.id })
+            })
+              .then((res) => res.json())
+              .then((data) => {
+                if (!data?.isAdmin) {
+                  localStorage.removeItem("shurefire_admin_session");
+                  setIsAdminLoggedIn(false);
+                  setAdminEmail("");
+                }
+              })
+              .catch(() => {});
+          }
+        }
+      } catch (e) {}
+    }
+  }, []);
 
   useEffect(() => {
     // Check for admin hash or admin path
@@ -470,6 +524,9 @@ Source: Shurefire Sovereign Construction Search (https://shurefire.ng)`;
           onLoginSuccess={(user) => {
             setIsAdminLoggedIn(true);
             if (user?.email) setAdminEmail(user.email);
+            if (typeof window !== "undefined") {
+              localStorage.setItem("shurefire_admin_session", JSON.stringify(user));
+            }
             window.history.pushState({}, "", "/admin/dashboard");
             setCurrentPath("/admin/dashboard");
             fetchAdminData();
@@ -487,6 +544,9 @@ Source: Shurefire Sovereign Construction Search (https://shurefire.ng)`;
           onLoginSuccess={(user) => {
             setIsAdminLoggedIn(true);
             if (user?.email) setAdminEmail(user.email);
+            if (typeof window !== "undefined") {
+              localStorage.setItem("shurefire_admin_session", JSON.stringify(user));
+            }
             setCurrentPath("/admin/dashboard");
             fetchAdminData();
           }}
@@ -498,7 +558,11 @@ Source: Shurefire Sovereign Construction Search (https://shurefire.ng)`;
       <AdminDashboard
         userEmail={adminEmail}
         onSignOut={() => {
+          if (typeof window !== "undefined") {
+            localStorage.removeItem("shurefire_admin_session");
+          }
           setIsAdminLoggedIn(false);
+          setAdminEmail("");
           const client = (typeof window !== "undefined" && window.dbClient) || getSupabase();
           client?.auth?.signOut?.();
           window.history.pushState({}, "", "/");
@@ -939,6 +1003,9 @@ Source: Shurefire Sovereign Construction Search (https://shurefire.ng)`;
                 onLoginSuccess={(user) => {
                   setIsAdminLoggedIn(true);
                   if (user?.email) setAdminEmail(user.email);
+                  if (typeof window !== "undefined") {
+                    localStorage.setItem("shurefire_admin_session", JSON.stringify(user));
+                  }
                   fetchAdminData();
                 }}
               />
@@ -970,7 +1037,11 @@ Source: Shurefire Sovereign Construction Search (https://shurefire.ng)`;
                 <AdminDashboard
                   userEmail={adminEmail}
                   onSignOut={() => {
+                    if (typeof window !== "undefined") {
+                      localStorage.removeItem("shurefire_admin_session");
+                    }
                     setIsAdminLoggedIn(false);
+                    setAdminEmail("");
                     const client = (typeof window !== "undefined" && window.dbClient) || getSupabase();
                     client?.auth?.signOut?.();
                     setShowAdminModal(false);

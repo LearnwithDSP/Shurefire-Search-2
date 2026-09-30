@@ -1655,115 +1655,21 @@ app2.get("/api/project-estimates", async (req, res) => {
 });
 app2.post("/api/admin/verify", async (req, res) => {
   try {
-    const { userId, email } = req.body;
+    const { userId } = req.body;
     if (!userId) {
-      res.status(400).json({ error: "userId is required" });
+      res.status(400).json({ error: "userId is required", isAdmin: false });
       return;
     }
-    let isAdminUser = false;
-    try {
-      const supabase = getSupabase();
-      const { data, error } = await supabase.from("profiles").select("*").eq("id", userId).single();
-      if (data && !error) {
-        isAdminUser = data.role === "admin";
-      }
-    } catch (err) {
-      console.log("[Shurefire Supabase] Profiles query skipped.");
-    }
-    if (!isAdminUser) {
-      try {
-        const docSnap = await getDoc(doc(db, "profiles", userId));
-        if (docSnap.exists()) {
-          isAdminUser = docSnap.data().role === "admin";
-        }
-      } catch (err) {
-        console.error("[Shurefire Firestore] Profiles query failed:", err);
-      }
-    }
-    res.json({ isAdmin: isAdminUser });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Failed to verify user profile" });
-  }
-});
-app2.post("/api/admin/auth/signup", async (req, res) => {
-  try {
-    const { email, password, fullName } = req.body;
-    if (!email || !password || !fullName) {
-      res.status(400).json({ error: "Email, password, and full name are required." });
+    const adminSupabase = getAdminSupabase();
+    const { data, error } = await adminSupabase.from("profiles").select("role").eq("id", userId).single();
+    if (error || !data || data.role !== "admin") {
+      res.status(403).json({ isAdmin: false, error: "Not authorized as administrator" });
       return;
     }
-    const emailClean = email.trim().toLowerCase();
-    const userDocId = `usr_${crypto.createHash("sha1").update(emailClean).digest("hex")}`;
-    const hashedPassword = crypto.createHash("sha256").update(password).digest("hex");
-    const isSupaActive = isSupabaseConfigured();
-    let createdUser = null;
-    if (isSupaActive) {
-      try {
-        const supabase = getSupabase();
-        const { data, error } = await supabase.auth.signUp({
-          email: emailClean,
-          password,
-          options: { data: { full_name: fullName } }
-        });
-        if (error) {
-          console.warn("[Server Admin Signup] Supabase signup error:", error.message);
-        } else if (data?.user) {
-          createdUser = {
-            id: data.user.id,
-            email: data.user.email,
-            fullName,
-            role: "admin"
-          };
-          try {
-            await supabase.from("profiles").upsert({
-              id: data.user.id,
-              email: emailClean,
-              full_name: fullName,
-              role: "admin",
-              updated_at: (/* @__PURE__ */ new Date()).toISOString()
-            });
-          } catch (err) {
-            console.warn("[Server Admin Signup] Supabase profile write failed:", err);
-          }
-        }
-      } catch (supaErr) {
-        console.warn("[Server Admin Signup] Supabase signup exception:", supaErr);
-      }
-    }
-    if (!createdUser) {
-      try {
-        const docSnap = await getDoc(doc(db, "profiles", userDocId));
-        if (docSnap.exists()) {
-          res.status(400).json({ error: "An account with this email already exists." });
-          return;
-        }
-        const profilePayload = {
-          id: userDocId,
-          email: emailClean,
-          fullName,
-          role: "admin",
-          passwordHash: hashedPassword,
-          createdAt: (/* @__PURE__ */ new Date()).toISOString()
-        };
-        await setDoc(doc(db, "profiles", userDocId), profilePayload);
-        createdUser = {
-          id: userDocId,
-          email: emailClean,
-          fullName,
-          role: "admin"
-        };
-        console.log(`[Server Admin Signup] Registered user in Firestore: ${userDocId}`);
-      } catch (fsErr) {
-        console.error("[Server Admin Signup] Firestore fallback failed:", fsErr);
-        res.status(500).json({ error: "Sovereign cloud registration failed. Please check backend databases." });
-        return;
-      }
-    }
-    res.json({ success: true, user: createdUser });
+    res.json({ isAdmin: true, role: "admin" });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err?.message || "Internal server registration failure." });
+    console.error("[Admin Verify] Verification error:", err);
+    res.status(500).json({ isAdmin: false, error: "Failed to verify session" });
   }
 });
 app2.post("/api/admin/auth/login", async (req, res) => {
@@ -1773,66 +1679,58 @@ app2.post("/api/admin/auth/login", async (req, res) => {
       res.status(400).json({ error: "Email and password are required." });
       return;
     }
-    const emailClean = email.trim().toLowerCase();
-    const userDocId = `usr_${crypto.createHash("sha1").update(emailClean).digest("hex")}`;
-    const hashedPassword = crypto.createHash("sha256").update(password).digest("hex");
-    const isSupaActive = isSupabaseConfigured();
-    let authenticatedUser = null;
-    if (isSupaActive) {
-      try {
-        const supabase = getSupabase();
-        const { data, error } = await supabase.auth.signInWithPassword({
-          email: emailClean,
-          password
-        });
-        if (!error && data?.user) {
-          let role = "admin";
-          try {
-            const { data: profile } = await supabase.from("profiles").select("role").eq("id", data.user.id).single();
-            if (profile) role = profile.role;
-          } catch (pErr) {
-            console.warn("[Server Admin Login] Failed role lookup on Supabase, checking Firestore fallback.");
-          }
-          authenticatedUser = {
-            id: data.user.id,
-            email: data.user.email,
-            fullName: data.user.user_metadata?.full_name || "Sovereign Desk",
-            role
-          };
-        }
-      } catch (supaErr) {
-        console.warn("[Server Admin Login] Supabase auth attempt skipped/failed:", supaErr);
+    const emailClean = String(email).trim().toLowerCase();
+    const rawPassword = String(password);
+    const supabase = getSupabase();
+    let authUser = null;
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: emailClean,
+        password: rawPassword
+      });
+      if (error || !data?.user) {
+        console.error("[Admin Auth] Supabase signInWithPassword failed:", error?.message || "Invalid credentials");
+        res.status(401).json({ error: "Invalid email or password." });
+        return;
       }
+      authUser = data.user;
+    } catch (authErr) {
+      console.error("[Admin Auth] Authentication exception:", authErr?.message || authErr);
+      res.status(401).json({ error: "Invalid email or password." });
+      return;
     }
-    if (!authenticatedUser) {
-      try {
-        const docSnap = await getDoc(doc(db, "profiles", userDocId));
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          if (data.passwordHash === hashedPassword) {
-            authenticatedUser = {
-              id: data.id,
-              email: data.email,
-              fullName: data.fullName || "Sovereign Officer",
-              role: data.role || "admin"
-            };
-          } else {
-            res.status(401).json({ error: "Verification failed. Invalid password." });
-            return;
-          }
-        }
-      } catch (fsErr) {
-        console.error("[Server Admin Login] Firestore lookup error:", fsErr);
+    let profile = null;
+    try {
+      const adminSupabase = getAdminSupabase();
+      const { data: profileData, error: profileErr } = await adminSupabase.from("profiles").select("role").eq("id", authUser.id).single();
+      if (profileErr || !profileData) {
+        console.error("[Admin Auth] Profile not found for id:", authUser.id, profileErr?.message);
+        res.status(403).json({ error: "Admin profile not found." });
+        return;
       }
+      profile = profileData;
+    } catch (dbErr) {
+      console.error("[Admin Auth] Database service role query error:", dbErr?.message || dbErr);
+      res.status(403).json({ error: "Admin profile not found." });
+      return;
     }
-    if (authenticatedUser) {
-      res.json({ success: true, user: authenticatedUser });
-    } else {
-      res.status(401).json({ error: "Verification failed. Authorized 'admin' personnel only." });
+    if (profile.role !== "admin") {
+      console.warn(`[Admin Auth] User ${emailClean} (${authUser.id}) rejected: role is '${profile.role}'`);
+      res.status(403).json({ error: "Your account is not authorized as an administrator." });
+      return;
     }
+    res.json({
+      success: true,
+      user: {
+        id: authUser.id,
+        email: authUser.email,
+        fullName: authUser.user_metadata?.full_name || "Sovereign Administrator",
+        role: "admin"
+      }
+    });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err?.message || "Internal server verification failure." });
+    console.error("[Admin Auth] Unexpected server failure:", err);
+    res.status(500).json({ error: "Internal server authentication failure." });
   }
 });
 app2.get("/api/admin/leads", async (req, res) => {
