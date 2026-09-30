@@ -14,9 +14,8 @@ import { getSupabase, isSupabaseConfigured } from "./src/supabase.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-async function startServer() {
-  const app = express();
-  const PORT = 3000;
+export const app = express();
+const PORT = 3000;
 
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ extended: true, limit: "50mb" }));
@@ -2462,24 +2461,37 @@ Be highly accurate. Structure the response strictly according to the specified s
     }
   });
 
-  // Setup Vite middleware for dynamic hot reloads or static directories
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
+  // Standalone HTTP Server listener (Local Development / Docker Container)
+  // When running in Vercel Serverless environment, VERCEL=1 is set, so this listener is skipped
+  export async function startServer() {
+    if (process.env.VERCEL) {
+      return;
+    }
+
+    if (process.env.NODE_ENV !== "production") {
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: "spa",
+      });
+      app.use(vite.middlewares);
+    } else {
+      const distPath = path.join(process.cwd(), "dist");
+      app.use(express.static(distPath));
+      app.get("*", (req, res) => {
+        res.sendFile(path.join(distPath, "index.html"));
+      });
+    }
+
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`Shorefire node server actively listening on port ${PORT}`);
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Shorefire node server actively listening on port ${PORT}`);
-  });
-}
+  // Only launch standalone listener when not in Vercel serverless environment
+  if (!process.env.VERCEL) {
+    startServer().catch((err) => {
+      console.error("Failed to start standalone server:", err);
+    });
+  }
 
-startServer();
+  export default app;
