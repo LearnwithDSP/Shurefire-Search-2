@@ -1,3 +1,19 @@
+// Suppress Node 22 DEP0169 warning emitted by internal Express 4.x / parseurl dependencies
+const origEmitWarning = process.emitWarning;
+process.emitWarning = (warning: any, ...args: any[]) => {
+  const code = typeof args[0] === "string" ? args[1] : (args[0] as any)?.code;
+  const message = typeof warning === "string" ? warning : warning?.message || "";
+  if (
+    code === "DEP0169" ||
+    message.includes("url.parse") ||
+    message.includes("DEP0169") ||
+    (typeof warning === "object" && warning?.code === "DEP0169")
+  ) {
+    return;
+  }
+  return (origEmitWarning as any).call(process, warning, ...args);
+};
+
 import express from "express";
 import crypto from "crypto";
 import path from "path";
