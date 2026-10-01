@@ -52,6 +52,21 @@ export interface GroundingSource {
   uri: string;
 }
 
+export type SearchIntent = 
+  | "PRICE"
+  | "BUILDING_COST"
+  | "MATERIAL_SPECIFICATION"
+  | "QUANTITY"
+  | "SUPPLIER"
+  | "PROCUREMENT"
+  | "GENERAL_INFORMATION";
+
+export interface QueryIntentInfo {
+  intent: SearchIntent;
+  confidence: number;
+  matchedKeywords?: string[];
+}
+
 export interface SearchResultItem {
   id: string;
   title: string;

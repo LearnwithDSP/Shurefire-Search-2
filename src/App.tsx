@@ -623,57 +623,14 @@ Source: Shurefire Sovereign Construction Search (https://shurefire.ng)`;
       {!hasSearched ? (
         <div className="flex-1 flex flex-col justify-between py-5 px-4 sm:px-8">
           
-          {/* Top Bar Header */}
-          <header className="w-full max-w-7xl mx-auto flex items-center justify-end gap-2.5 sm:gap-3 select-none h-14">
-            
-            {/* Quick Nav: ShureEstimate */}
-            <button
-              onClick={() => {
-                window.location.hash = "#/estimate";
-                setCurrentHash("#/estimate");
-              }}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-[#e2e8f0] bg-white text-xs font-semibold text-[#0f172a] hover:border-[#ae2424]/40 hover:bg-[#f8fafc] transition-colors shadow-2xs cursor-pointer"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-[#ae2424]" />
-              <span>ShureEstimate</span>
-            </button>
-
-            {/* Quick Nav: Procure with Shurefire */}
-            <button
-              onClick={() => {
-                window.location.hash = "#/procure";
-                setCurrentHash("#/procure");
-              }}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-[#e2e8f0] bg-white text-xs font-semibold text-[#ae2424] hover:bg-rose-50/50 transition-colors shadow-2xs cursor-pointer"
-            >
-              <Truck className="w-3.5 h-3.5 text-[#ae2424]" />
-              <span className="hidden sm:inline">Procure Materials</span>
-              <span className="sm:hidden">Procure</span>
-            </button>
-
-            {/* Status Pill: Admin Portal */}
+          {/* Top Bar Header - Only Round RB icon for admin navigation */}
+          <header className="w-full max-w-7xl mx-auto flex items-center justify-end select-none h-14">
+            {/* Circular RB Profile Badge - Admin Navigation to Login Form */}
             <button
               onClick={() => setShowAdminModal(true)}
-              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-[#e2e8f0] bg-white text-xs font-semibold text-[#0f172a] hover:border-[#ae2424]/40 hover:bg-[#f8fafc] transition-colors shadow-2xs cursor-pointer"
-              title="Access Sovereign Admin Portal (#shurefire-admin)"
-            >
-              <span className="w-2 h-2 rounded-full bg-[#ae2424] animate-pulse"></span>
-              <span>Admin</span>
-            </button>
-
-            {/* Grid Menu Icon */}
-            <button 
-              className="p-2 text-[#64748b] hover:text-[#0f172a] hover:bg-[#f8fafc] rounded-full transition-colors cursor-pointer" 
-              title="Shurefire Construction Services"
-            >
-              <Grid className="w-5 h-5" />
-            </button>
-
-            {/* Circular Profile Badge using #ae2424 */}
-            <button
-              onClick={() => setShowAdminModal(true)}
-              className="w-8 h-8 rounded-full bg-[#ae2424] text-white flex items-center justify-center font-bold text-xs shadow-xs hover:opacity-90 hover:scale-105 transition-all cursor-pointer border border-[#ae2424]/20"
-              title="Ramon Bisola (Project Manager) - Click to open Admin Portal"
+              className="w-10 h-10 rounded-full bg-[#ae2424] text-white flex items-center justify-center font-black text-sm shadow-sm hover:bg-[#931f1f] hover:scale-105 active:scale-95 transition-all cursor-pointer border-2 border-white ring-2 ring-[#ae2424]/25"
+              title="Admin Portal Login (Ramon Bisola)"
+              aria-label="Admin Login"
             >
               RB
             </button>
@@ -682,13 +639,13 @@ Source: Shurefire Sovereign Construction Search (https://shurefire.ng)`;
           {/* Center Search Console Column */}
           <main className="w-full max-w-3xl mx-auto flex flex-col items-center justify-center space-y-6 my-auto text-center px-2">
             
-            {/* Center Branding: Big, Bold, Neat SaaS-like Hero Header */}
-            <div className="flex flex-col items-center cursor-default select-none animate-fade-in pb-3">
-              <h1 className="text-6xl sm:text-7xl md:text-8xl lg:text-9xl font-black tracking-[-0.03em] text-[#ae2424] leading-tight select-none">
-                Shurefire
+            {/* Center Branding: Bigger and Bolder SHUREFIRE Header */}
+            <div className="flex flex-col items-center cursor-default select-none animate-fade-in pb-4">
+              <h1 className="text-7xl sm:text-8xl md:text-9xl lg:text-[10rem] xl:text-[11.5rem] font-black tracking-[-0.04em] text-[#ae2424] leading-none select-none drop-shadow-xs">
+                SHUREFIRE
               </h1>
-              <p className="mt-2.5 sm:mt-3.5 text-sm sm:text-base md:text-lg font-medium text-slate-600 tracking-tight text-center max-w-2xl px-4">
-                <span className="font-bold text-slate-900">#1 Construction Search Engine In Africa</span>
+              <p className="mt-4 sm:mt-5 text-sm sm:text-base md:text-lg font-semibold text-slate-700 tracking-tight text-center max-w-2xl px-4">
+                <span className="font-extrabold text-slate-900">#1 Construction Search Engine In Africa</span>
                 <span className="text-slate-400 mx-2 font-normal hidden sm:inline">-</span>
                 <span className="block sm:inline text-slate-600 font-medium">Developed for building Enthusiats</span>
               </p>
@@ -786,68 +743,28 @@ Source: Shurefire Sovereign Construction Search (https://shurefire.ng)`;
                 </div>
               )}
 
-              {/* CTA Action Buttons */}
+              {/* Search Submit Action Button */}
               <div className="flex items-center justify-center gap-3 pt-1">
                 <button
-                  type="button"
-                  onClick={() => {
-                    window.location.hash = "#/estimate";
-                    setCurrentHash("#/estimate");
-                  }}
-                  className="px-5 py-2.5 rounded-full bg-[#f8fafc] hover:bg-slate-100 border border-[#e2e8f0] hover:border-slate-300 text-xs sm:text-sm font-semibold text-[#0f172a] transition-all cursor-pointer shadow-2xs active:scale-95"
+                  type="submit"
+                  className="px-6 py-2.5 rounded-full bg-[#f8fafc] hover:bg-slate-100 border border-[#e2e8f0] hover:border-slate-300 text-xs sm:text-sm font-bold text-slate-800 transition-all cursor-pointer shadow-2xs active:scale-95 inline-flex items-center gap-2"
                 >
-                  ShureEstimate
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    window.location.hash = "#/procure";
-                    setCurrentHash("#/procure");
-                  }}
-                  className="px-5 py-2.5 rounded-full bg-white hover:bg-slate-50 border border-[#e2e8f0] hover:border-[#ae2424]/40 text-xs sm:text-sm font-semibold text-[#ae2424] transition-all cursor-pointer shadow-2xs active:scale-95"
-                >
-                  Procure with Shurefire
+                  <Search className="w-3.5 h-3.5 text-[#ae2424]" />
+                  <span>Search Shurefire</span>
                 </button>
               </div>
             </form>
           </main>
 
           {/* Minimalist Light-Mode Footer */}
-          <footer className="w-full max-w-7xl mx-auto pt-8 pb-3 border-t border-[#e2e8f0] text-[#64748b] text-xs select-none space-y-2">
+          <footer className="w-full max-w-7xl mx-auto pt-8 pb-4 border-t border-[#e2e8f0] text-[#64748b] text-xs select-none">
             <div className="flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left">
               <p className="text-[12px] font-normal">
                 Calculations powered by Gemini AI. Real-time pricing sourced from Shurefire Sovereign Marketplace.
               </p>
-              <div className="flex flex-wrap items-center justify-center sm:justify-end gap-4 text-[12px]">
-                <button
-                  onClick={() => {
-                    window.location.hash = "#/estimate";
-                    setCurrentHash("#/estimate");
-                  }}
-                  className="hover:underline text-[#0f172a] font-medium cursor-pointer"
-                >
-                  ShureEstimate
-                </button>
-                <button
-                  onClick={() => {
-                    window.location.hash = "#/procure";
-                    setCurrentHash("#/procure");
-                  }}
-                  className="hover:underline text-[#ae2424] font-medium cursor-pointer"
-                >
-                  Procure Materials
-                </button>
-                <span className="flex items-center gap-1 font-medium text-[#0f172a]">
-                  <MapPin className="w-3.5 h-3.5 text-[#ae2424]" />
-                  Lagos, Nigeria
-                </span>
-                <button
-                  onClick={() => setShowAdminModal(true)}
-                  className="hover:underline text-[#ae2424] font-medium cursor-pointer"
-                >
-                  Admin Portal
-                </button>
-              </div>
+              <p className="text-[12px] text-slate-400">
+                &copy; {new Date().getFullYear()} Shurefire. All rights reserved.
+              </p>
             </div>
           </footer>
 
