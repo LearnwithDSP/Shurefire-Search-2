@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import { getSupabase } from "../supabase";
 import { useVoiceToText } from "../useVoiceToText";
+import { cleanSubstantiveContent } from "../cleanSubstantiveContent";
 
 export interface SourceMetadata {
   domain: string;
@@ -201,12 +202,15 @@ export const SearchResultsPage: React.FC<SearchResultsPageProps> = ({
             created_at: r.created_at || null
           };
 
+          const cleanContent = r.cleanedContent || cleanSubstantiveContent(rawContent);
+
           return {
             id: r.id ? String(r.id) : `res_${idx}`,
             title,
-            content: rawContent,
-            cleanedContent: r.cleanedContent,
-            cleanedContentLength,
+            content: cleanContent,
+            cleanedContent: cleanContent,
+            rawContent: r.rawContent || rawContent,
+            cleanedContentLength: typeof r.cleanedContentLength === "number" ? r.cleanedContentLength : cleanContent.length,
             url: targetUrl,
             material_category: category,
             domain: cleanDomain,
@@ -219,7 +223,7 @@ export const SearchResultsPage: React.FC<SearchResultsPageProps> = ({
             contentLength,
             sourceMetadata,
             created_at: r.created_at,
-            excerpt: r.excerpt || r.snippet || (r.cleanedContent ? r.cleanedContent.slice(0, 240) : rawContent.replace(/\[\s*!\[.*?\]\(.*?\)\s*[^\]]*\]\([^)]*\)/g, "").replace(/!\[.*?\]\(.*?\)/g, "").replace(/\[([^\]]+)\]\([^)]+\)/g, "$1").replace(/[#*`_]/g, "").trim().slice(0, 240)),
+            excerpt: r.excerpt || r.snippet || (r.cleanedContent ? r.cleanedContent.slice(0, 240) : (r.content ? r.content.slice(0, 240) : "")),
             similarity: sim,
             rawRecord: r
           };
@@ -370,26 +374,64 @@ Source: Shurefire Search (https://shurefire.africa)`;
   // Copy drawer content
   const handleCopyDrawer = () => {
     if (!selectedDrawerRecord) return;
+    const textToCopy = selectedDrawerRecord.cleanedContent || selectedDrawerRecord.content;
     const text = `${selectedDrawerRecord.title.toUpperCase()}
 Category: ${selectedDrawerRecord.material_category}
 Source: ${selectedDrawerRecord.url}
 
-${selectedDrawerRecord.content}`;
+${textToCopy}`;
     navigator.clipboard.writeText(text);
     setHasCopiedDrawerContent(true);
     setTimeout(() => setHasCopiedDrawerContent(false), 2000);
   };
 
+  // Helper: Format inline bold markdown without raw asterisks
+  const formatInlineContent = (text: string) => {
+    if (!text) return "";
+    const cleanText = text
+      .replace(/\[\s*(?:!\[.*?\]\(.*?\)\s*)+[^\]]*\]\([^)]*\)/g, "")
+      .replace(/!\[.*?\]\(.*?\)/g, "")
+      .replace(/!\[.*?\]/g, "")
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1");
+
+    const parts = cleanText.split(/(\*\*[^*]+\*\*)/g);
+    return parts.map((part, i) => {
+      if (part.startsWith("**") && part.endsWith("**")) {
+        return (
+          <strong key={i} className="font-bold text-slate-900">
+            {part.slice(2, -2)}
+          </strong>
+        );
+      }
+      return part;
+    });
+  };
+
   // Render markdown text cleanly inside the drawer
   const renderFormattedMarkdown = (rawText: string) => {
     if (!rawText) return null;
-    const lines = rawText.split("\n");
+    const sanitized = rawText
+      .replace(/\[\s*(?:!\[.*?\]\(.*?\)\s*)+[^\]]*\]\([^)]*\)/g, "")
+      .replace(/!\[.*?\]\(.*?\)/g, "")
+      .replace(/!\[.*?\]/g, "")
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1");
+
+    const lines = sanitized.split("\n");
 
     return (
       <div className="space-y-3.5 text-xs text-slate-700 leading-relaxed font-sans">
         {lines.map((line, idx) => {
           const trimmed = line.trim();
           if (!trimmed) return <div key={idx} className="h-1.5" />;
+
+          // Table row
+          if (trimmed.startsWith("|") && trimmed.endsWith("|")) {
+            return (
+              <div key={idx} className="font-mono text-[11px] overflow-x-auto py-0.5 text-slate-800">
+                {trimmed}
+              </div>
+            );
+          }
 
           // Heading 3
           if (trimmed.startsWith("### ")) {
@@ -415,7 +457,7 @@ ${selectedDrawerRecord.content}`;
             return (
               <div key={idx} className="flex items-start gap-2 pl-1.5">
                 <span className="text-[#ae2424] font-bold text-sm leading-none mt-0.5">•</span>
-                <span className="flex-1 text-slate-700">{trimmed.replace(/^[-*•]\s+/, "")}</span>
+                <span className="flex-1 text-slate-700">{formatInlineContent(trimmed.replace(/^[-*•]\s+/, ""))}</span>
               </div>
             );
           }
@@ -423,7 +465,7 @@ ${selectedDrawerRecord.content}`;
           // Standard paragraph
           return (
             <p key={idx} className="text-slate-600 leading-relaxed">
-              {trimmed}
+              {formatInlineContent(trimmed)}
             </p>
           );
         })}
@@ -1171,7 +1213,7 @@ ${selectedDrawerRecord.content}`;
 
                 {/* Render Formatted Markdown */}
                 <div className="pt-1">
-                  {renderFormattedMarkdown(selectedDrawerRecord.content)}
+                  {renderFormattedMarkdown(selectedDrawerRecord.cleanedContent || selectedDrawerRecord.content)}
                 </div>
               </div>
 

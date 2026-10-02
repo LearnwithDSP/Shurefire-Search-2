@@ -61,6 +61,20 @@ export type SearchIntent =
   | "PROCUREMENT"
   | "GENERAL_INFORMATION";
 
+export interface StructuredQueryIntelligence {
+  search_intent: "price" | "quantity" | "specification" | "comparison" | "procurement" | "location" | "construction_method" | "general_information" | "unknown";
+  material: string | null;
+  construction_stage: string | null;
+  location: string | null;
+  project_type: string | null;
+  specification: string | null;
+  quantity: string | null;
+  price_request: string | null;
+  comparison_target: string | null;
+  procurement_intent: boolean | null;
+  optimized_search_query: string;
+}
+
 export interface QueryIntentInfo {
   intent: SearchIntent;
   confidence: number;

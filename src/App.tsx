@@ -35,6 +35,7 @@ import AdminDashboard from "./components/AdminDashboard";
 import SearchResultsPage from "./components/SearchResultsPage";
 import ShureEstimatePage from "./components/ShureEstimatePage";
 import ProcureWithShurefirePage from "./components/ProcureWithShurefirePage";
+import { cleanSubstantiveContent } from "./cleanSubstantiveContent";
 
 interface SpecCalculation {
   cementBags: number;
@@ -370,16 +371,77 @@ export default function App() {
 
     setMaterials(supabaseMaterials);
 
-    // 2. Fetch AI Overview summary
+    // 2. Retrieve knowledge content and fetch AI Overview summary with clean grounding
     try {
+      // Retrieve raw content from Supabase knowledge_base if available
+      let rawRetrievedContent = "";
+      const client = window.dbClient || getSupabase();
+      if (client) {
+        try {
+          const { data: kbData } = await client
+            .from("knowledge_base")
+            .select("title, content, material_category, url")
+            .or(`title.ilike.%${cleanTerm}%,content.ilike.%${cleanTerm}%`)
+            .limit(3);
+          if (Array.isArray(kbData) && kbData.length > 0) {
+            rawRetrievedContent = kbData.map((d: any) => d.content || "").filter(Boolean).join("\n\n");
+          }
+        } catch (dbKbErr) {
+          console.warn("[Shurefire dbClient] Knowledge base fetch notice:", dbKbErr);
+        }
+      }
+
+      // Process the raw retrieved content through the cleanSubstantiveContent utility
+      // before passing the content to the Gemini AI API call for grounding
+      const cleanedContentForGrounding = cleanSubstantiveContent(rawRetrievedContent);
+
+      // Perform Gemini AI call for grounding via /api/search with cleaned grounding context
       const aiRes = await fetch("/api/search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: cleanTerm })
+        body: JSON.stringify({ 
+          query: cleanTerm,
+          groundingContext: cleanedContentForGrounding || undefined
+        })
       });
+
       if (aiRes.ok) {
         const aiData = await aiRes.json();
-        setAiSummary(aiData.featuredAnswer || aiData.answer || null);
+        
+        // If search returned raw content, ensure it is processed through cleanSubstantiveContent
+        let rawAnswer = aiData.featuredAnswer || aiData.answer || (aiData.aiOverview?.summaryParagraphs?.join("\n\n")) || null;
+
+        // If direct synthesis is required with retrieved sources
+        if (!rawAnswer && (cleanedContentForGrounding || (Array.isArray(aiData.searchResults) && aiData.searchResults.length > 0))) {
+          const rawSearchContent = Array.isArray(aiData.searchResults)
+            ? aiData.searchResults.map((r: any) => r.rawContent || r.content || "").join("\n\n")
+            : "";
+          const cleanedSearchContent = cleanSubstantiveContent(rawSearchContent);
+          const effectiveContext = cleanedContentForGrounding || cleanedSearchContent;
+
+          if (effectiveContext) {
+            try {
+              const synthRes = await fetch("/api/synthesize", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  query: cleanTerm,
+                  rawContext: effectiveContext
+                })
+              });
+              if (synthRes.ok) {
+                const synthData = await synthRes.json();
+                rawAnswer = synthData.shortSummary || synthData.executiveOverview || null;
+              }
+            } catch (synthErr) {
+              console.warn("[Shurefire AI] Grounded synthesize call notice:", synthErr);
+            }
+          }
+        }
+
+        // Process raw retrieved content through cleanSubstantiveContent utility before updating the aiSummary state
+        const cleanedAiSummary = cleanSubstantiveContent(rawAnswer);
+        setAiSummary(cleanedAiSummary || null);
       }
     } catch (aiErr) {
       console.warn("[Shurefire AI] Direct summary fetch note:", aiErr);

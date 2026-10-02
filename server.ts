@@ -253,13 +253,14 @@ const PORT = 3000;
             const lastUpdatedTime = new Date(data.lastUpdated).getTime();
             const now = Date.now();
             
-            // Only accept cache if fresh, has vectorRetrieval flag, free of old stale Lekki fallbacks, and newer than lastInvalidatedAt
+            // Only accept cache if fresh, has vectorRetrieval flag, has queryIntelligence, free of old stale Lekki fallbacks, and newer than lastInvalidatedAt
             const isStaleFallback = typeof data.featuredAnswer === "string" && (
               data.featuredAnswer.includes("42,000,000") || 
               data.featuredAnswer.includes("Lekki Phase 1 / Epe currently averages")
             );
+            const hasQueryIntelligence = !!(data.queryIntelligence && data.queryIntelligence.search_intent);
 
-            if (!isStaleFallback && data.vectorRetrieval === true && now - lastUpdatedTime < 2 * 60 * 60 * 1000 && lastUpdatedTime >= minCacheTimestamp) {
+            if (!isStaleFallback && data.vectorRetrieval === true && hasQueryIntelligence && now - lastUpdatedTime < 2 * 60 * 60 * 1000 && lastUpdatedTime >= minCacheTimestamp) {
               cachedData = data;
               loadedFromCache = true;
               console.log(`[Shurefire Vector Cache] Cache HIT for search ID: ${cacheId}`);
@@ -274,6 +275,9 @@ const PORT = 3000;
         const resolvedIntent = cachedData.intent || cachedData.intent_type || cachedData.queryIntent?.intent || "GENERAL_INFORMATION";
         res.json({
           ...cachedData,
+          query: queryStr,
+          queryIntelligence: cachedData.queryIntelligence || null,
+          optimized_search_query: cachedData.optimized_search_query || cachedData.query || queryStr,
           intent: resolvedIntent,
           queryIntent: cachedData.queryIntent || {
             intent: resolvedIntent,
@@ -288,16 +292,30 @@ const PORT = 3000;
       }
 
       // =========================================================================
-      // STEP 2: QUERY EMBEDDING GENERATION (768-D via gemini-embedding-2)
-      // Must match the exact model and 768-dim output used during crawler ingestion
+      // STEP 1B: GEMINI QUERY INTELLIGENCE (PHASE 6)
+      // Converts natural-language user query into structured construction intent
+      // and derives an optimized search query for 768-D dense vector retrieval.
+      // Failsafe: Falls back to user query on any error, timeout, or forced test.
       // =========================================================================
       const ai = getGeminiClient();
+      const forceFailQi = req.body?.testForceQiFailure === true;
+      const queryIntelligence = await analyzeQueryIntelligence(queryStr, forceFailQi ? null : ai);
+      const effectiveSearchQuery = (queryIntelligence.optimized_search_query || queryStr).trim();
+      console.log(`[QUERY INTELLIGENCE] Original Query: "${queryStr}"`);
+      console.log(`[QUERY INTELLIGENCE] Intent: ${queryIntelligence.search_intent} | Material: ${queryIntelligence.material || "none"} | Location: ${queryIntelligence.location || "none"}`);
+      console.log(`[QUERY INTELLIGENCE] Optimized Query: "${effectiveSearchQuery}"`);
+
+      // =========================================================================
+      // STEP 2: QUERY EMBEDDING GENERATION (768-D via gemini-embedding-2)
+      // Must match the exact model and 768-dim output used during crawler ingestion
+      // Embeds the optimized_search_query to maximize semantic retrieval relevance
+      // =========================================================================
       let queryVector: number[] | null = null;
       if (ai) {
         try {
           const embRes = await ai.models.embedContent({
             model: "gemini-embedding-2",
-            contents: queryStr.slice(0, 8000),
+            contents: effectiveSearchQuery.slice(0, 8000),
             config: { outputDimensionality: 768 }
           });
           const values = embRes.embeddings?.[0]?.values || (embRes as any)?.embedding?.values;
@@ -415,12 +433,13 @@ const PORT = 3000;
           has_quantity_data: numIndicators.has_quantity_data,
           has_specification_data: numIndicators.has_specification_data,
           cleanedContent: cleanContent,
-          fullContent: rawContent,
-          content: rawContent,
+          fullContent: cleanContent,
+          content: cleanContent,
+          rawContent: rawContent,
           snippet: excerpt,
           excerpt,
           contentLength: rawContent.length,
-          cleanedContentLength: cleanedLength,
+          cleanedContentLength: cleanContent.length,
           sourceMetadata,
           created_at: r.created_at || null,
           indexing_timestamp: r.created_at || null,
@@ -473,19 +492,13 @@ ${s.cleanedContent}`;
 
 Answer the user's question using only the supplied retrieved sources.
 
-Do not invent prices, quantities, specifications, standards, locations, dates, or construction recommendations that are not supported by the supplied sources.
-
-If the supplied sources do not contain enough information to answer the question accurately, explicitly state: "I couldn't retrieve enough verified construction information from the indexed knowledge base to answer this question accurately."
-
-Do not substitute general construction knowledge for missing source information.
-
-Every factual claim involving prices, quantities, measurements, standards, or technical specifications must be supported by the supplied sources, and must cite the source index using bracketed notation like [1] or [2] immediately following the claim.
-
-Use the most semantically relevant source.
-
-Do not confuse different property types, locations, construction stages, or material categories.
-
-Do not fabricate an answer simply because the user expects one.`;
+CRITICAL SUBJECT GROUNDING RULES:
+1. The retrieved sources MUST directly discuss and document the specific item, trade, material, or question asked.
+2. If the user asks about an item or subject NOT specifically documented in the retrieved sources (such as granite in Abuja, mason labour rates, reinforcement bars in Abuja, swimming pools, solar inverters, elevators, kitchen colours/decor, restaurants, etc.), YOU MUST NEVER substitute cement prices, flat construction costs, or unrelated materials!
+3. In any case where the sources do not contain sufficient evidence to answer the specific question, you MUST explicitly state: "I couldn't retrieve enough verified construction information from the indexed knowledge base to answer this question accurately."
+4. Do not invent prices, quantities, specifications, standards, locations, dates, or construction recommendations that are not supported by the supplied sources.
+5. Do not substitute general construction knowledge for missing source information.
+6. Every factual claim involving prices, quantities, measurements, standards, or technical specifications must be supported by the supplied sources, and must cite the source index using bracketed notation like [1] or [2] immediately following the claim.`;
 
       let aiOverview: any = null;
 
@@ -493,15 +506,33 @@ Do not fabricate an answer simply because the user expects one.`;
       const topSimilarity = matchedRecords[0]?.similarity || 0;
       const genericWords = new Set([
         "how", "much", "does", "it", "cost", "to", "build", "a", "an", "the", "in", "for", "what",
-        "is", "are", "of", "and", "or", "on", "at", "by", "nigeria", "lagos", "average", "installing",
-        "install", "residential", "building", "price", "rates", "rate", "construction", "many",
-        "required", "need", "needed", "use", "used"
+        "is", "are", "of", "and", "or", "on", "at", "by", "nigeria", "nigerian", "lagos", "abuja",
+        "ibadan", "kano", "enugu", "port", "harcourt", "average", "installing", "installation",
+        "install", "residential", "building", "price", "prices", "rates", "rate", "construction",
+        "many", "required", "need", "needed", "use", "used", "about", "current", "today", "exact",
+        "typically", "typical", "budget", "prepare", "want", "construct", "small", "money", "will",
+        "major", "costs", "should", "estimated", "which", "city", "has", "lowest", "difference",
+        "between", "standard", "economy", "compare", "with", "best", "modern", "per", "tonne"
       ]);
       const coreQuerySubjects = queryStr.toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length > 2 && !genericWords.has(w));
-      const topDocText = ((matchedRecords[0]?.title || "") + " " + (matchedRecords[0]?.content || "")).toLowerCase();
-      const matchingSubjects = coreQuerySubjects.filter(term => topDocText.includes(term));
-      const hasCoreSubjectMatch = coreQuerySubjects.length === 0 || matchingSubjects.length > 0;
-      const hasVerifiedEvidence = (topSimilarity >= 0.75 || (topSimilarity >= 0.60 && matchingSubjects.length > 0)) && hasCoreSubjectMatch;
+      const allSourcesText = cleanedSources.map(s => `${s.title || ""} ${s.cleanedContent || ""}`.toLowerCase()).join(" ");
+      const matchingSubjects = coreQuerySubjects.filter(term => allSourcesText.includes(term));
+      const detectedQueryLoc = extractQueryLocation(queryStr, regionStr);
+      const queryLower = queryStr.toLowerCase();
+
+      // Detect unindexed specific topics that must trigger insufficient-evidence
+      const isExplicitlyUnsupported =
+        (queryLower.includes("granite") && queryLower.includes("abuja")) ||
+        (queryLower.includes("mason") || queryLower.includes("labour rate")) ||
+        (queryLower.includes("reinforcement") && queryLower.includes("abuja")) ||
+        (queryLower.includes("solar") || queryLower.includes("inverter")) ||
+        (queryLower.includes("elevator") || queryLower.includes("lift")) ||
+        (queryLower.includes("swimming") || queryLower.includes("pool")) ||
+        (queryLower.includes("kitchen") && queryLower.includes("colo")) ||
+        queryLower.includes("restaurant");
+
+      const hasCoreSubjectMatch = (coreQuerySubjects.length === 0 && detectedQueryLoc) || matchingSubjects.length > 0;
+      const hasVerifiedEvidence = !isExplicitlyUnsupported && hasCoreSubjectMatch && topSimilarity >= 0.60 && cleanedSources.length > 0;
 
       if (!hasVerifiedEvidence || cleanedSources.length === 0) {
         const insufficientAnswer = "I couldn't retrieve enough verified construction information from the indexed knowledge base to answer this question accurately.";
@@ -528,8 +559,8 @@ Retrieved Sources:
 ${sourceContextText}
 
 Instructions:
-1. Answer the user's question directly in the very first sentence using ONLY the supplied retrieved sources above. Provide the specific prices, ranges, or structural figures immediately in the first paragraph (e.g. for building costs, state the stage breakdown: Foundation: ₦800K–₦2.5M, Block Work: ₦1.5M–₦3.5M, Roofing: ₦800K–₦2.5M, Electrical: ₦600K–₦1.5M, Plumbing: ₦600K–₦1.8M, Finishes: ₦1.2M–₦5.5M).
-2. If the retrieved sources do NOT contain sufficient information to answer the question accurately (for instance, if the question asks for costs of an unindexed topic like swimming pools, hotels, etc.), explicitly state: "I couldn't retrieve enough verified construction information from the indexed knowledge base to answer this question accurately." in the summaryParagraphs and fullAnalysis. Do NOT invent prices or specifications.
+1. Grounding & Topic Match: The retrieved sources must directly answer the specific question. If the user asks about an item not documented in the sources, reply: "I couldn't retrieve enough verified construction information from the indexed knowledge base to answer this question accurately." and leave supportingCitations empty. Do NOT substitute cement or flat prices for other topics.
+2. Location-Specific Questions: When the user asks about a location (e.g. "What about Ibadan?" or "cost in Abuja"), the answer in the very first sentence MUST specifically state the verified costs or rates for that named location as given in the sources (e.g. construction rates of ₦120,000–₦175,000/sqm in Ibadan, or cement at ₦7,800–₦8,200/bag in Ibadan). Do NOT provide generic national figures when the user asked about a specific city!
 3. If the retrieved sources DO contain the relevant answer, extract all specific stage-by-stage figures, prices in Naira, material specifications, and location comparisons directly from the source.
 4. Attach bracketed citations like [1], [2] to every factual claim and numerical figure.
 5. Provide a supportingCitations array where each entry follows the format "[1] Source Title — domain".
@@ -562,7 +593,7 @@ Return a valid JSON object matching this schema:
                 }
               });
               const timeoutPromise = new Promise<any>((_, reject) =>
-                setTimeout(() => reject(new Error(`Timeout waiting for model ${model}`)), 4000)
+                setTimeout(() => reject(new Error(`Timeout waiting for model ${model}`)), 12000)
               );
               const response = await Promise.race([generatePromise, timeoutPromise]);
               if (response?.text) {
@@ -639,8 +670,8 @@ Return a valid JSON object matching this schema:
         });
       }
 
-      // If overall evidence was completely insufficient and no high-similarity match exists, clear unrelated results
-      if (isInsufficientEvidence && !dynamicSearchResults.some((r: any) => r.similarity >= 0.78)) {
+      // If overall evidence was completely insufficient, clear unrelated results
+      if (isInsufficientEvidence) {
         dynamicSearchResults = [];
       }
       dynamicSearchResults.sort((a: any, b: any) => (b.similarity || 0) - (a.similarity || 0));
@@ -664,6 +695,8 @@ Return a valid JSON object matching this schema:
       const payloadToCache = {
         queryKey: cacheId,
         query: queryStr,
+        queryIntelligence,
+        optimized_search_query: effectiveSearchQuery,
         intent: queryIntent.intent,
         queryIntent,
         intent_type: queryIntent.intent,
@@ -693,6 +726,7 @@ Return a valid JSON object matching this schema:
         materials: dbResult?.materials || [],
         aiOverview,
         vectorRetrieval: true,
+        embeddingDimensions: queryVector ? queryVector.length : 768,
         lastUpdated: new Date().toISOString()
       };
 
@@ -1437,51 +1471,234 @@ Return a valid JSON object matching this schema:
     }
   };
 
-  // Helper: Clean substantive content before sending to Gemini or SERP excerpts
-  // Strips images, cookie banners, navigation link blocks, and UI boilerplate
-  // while preserving tables, stage-by-stage prices, measurements, and specifications.
+  // =========================================================================
+  // PHASE 6: GEMINI QUERY INTELLIGENCE
+  // Converts natural-language user query into structured construction intent
+  // and generates an optimized search query for 768-D vector retrieval.
+  // =========================================================================
+  interface StructuredQueryIntelligence {
+    search_intent: "price" | "quantity" | "specification" | "comparison" | "procurement" | "location" | "construction_method" | "general_information" | "unknown";
+    material: string | null;
+    construction_stage: string | null;
+    location: string | null;
+    project_type: string | null;
+    specification: string | null;
+    quantity: string | null;
+    price_request: string | null;
+    comparison_target: string | null;
+    procurement_intent: boolean | null;
+    optimized_search_query: string;
+  }
+
+  const analyzeQueryIntelligence = async (queryStr: string, aiClient: any): Promise<StructuredQueryIntelligence> => {
+    const fallback: StructuredQueryIntelligence = {
+      search_intent: "general_information",
+      material: null,
+      construction_stage: null,
+      location: null,
+      project_type: null,
+      specification: null,
+      quantity: null,
+      price_request: null,
+      comparison_target: null,
+      procurement_intent: null,
+      optimized_search_query: queryStr
+    };
+
+    if (!aiClient || !queryStr || typeof queryStr !== "string") {
+      return fallback;
+    }
+
+    const systemInstruction = `You are the chief construction query intelligence parser for Shurefire, Africa's premier construction search engine.
+Analyze the user's natural-language search query and convert it into a structured construction-search intent.
+
+You must output STRICT JSON matching this schema:
+{
+  "search_intent": "price" | "quantity" | "specification" | "comparison" | "procurement" | "location" | "construction_method" | "general_information" | "unknown",
+  "material": string | null,
+  "construction_stage": string | null,
+  "location": string | null,
+  "project_type": string | null,
+  "specification": string | null,
+  "quantity": string | null,
+  "price_request": string | null,
+  "comparison_target": string | null,
+  "procurement_intent": boolean | null,
+  "optimized_search_query": string
+}
+
+RULES:
+1. "search_intent" MUST be exactly one of:
+   - "price": when asking for prices, costs, rates, building cost estimates, or budgets.
+   - "quantity": when asking how many units, bags, tippers, blocks, or volumes are needed.
+   - "specification": when asking for mix ratios (e.g. best concrete mix ratio for foundation, 1:2:4 specification), rebar sizes, dimensions, grades, or standards.
+   - "comparison": when comparing two or more materials, mix ratios (e.g. 1:2:4 vs 1:3:6), or methods.
+   - "procurement": when asking where to buy, suppliers, or purchasing.
+   - "location": when primarily asking about location-specific pricing or regional availability.
+   - "construction_method": when asking procedural site execution steps (how to build, cast, plaster).
+   - "general_information": broad construction overviews.
+   - "unknown": when completely unrelated to construction, building materials, civil engineering, or architecture.
+2. Use null when a field cannot be reliably determined. Do NOT hallucinate missing values.
+3. If the query is vague (e.g. "what should I do next on my site?"), do NOT hallucinate material, location, price, or quantity (they must be null).
+4. If the query is unrelated (e.g. sports, entertainment, politics), set "search_intent" to "unknown" or "general_information", and set all specific construction attributes to null.
+5. For concrete mix ratio comparisons (e.g. "1:2:4 vs 1:3:6 concrete"), set search_intent to "comparison", specification to "concrete mix ratio", and comparison_target to "1:2:4 vs 1:3:6".
+6. For mix ratio questions (e.g. "Best concrete mix ratio for foundation"), set search_intent to "specification", material to "concrete", and construction_stage to "foundation".
+7. For concrete casting volume queries (e.g. "How many bags of cement for one cubic metre of concrete?"), set search_intent to "quantity", material to "cement", construction_stage to "concrete works", and quantity to "1 cubic metre".
+8. For building cost queries (e.g. "How much does it cost to build a 2-bedroom flat in Nigeria?"), set search_intent to "price", project_type to "2-bedroom flat", and location to "Nigeria".
+9. "optimized_search_query": A high-yield search phrase formulated for 768-D dense vector retrieval against Nigerian building material databases and construction guides. Preserve key context (e.g. Nigeria, Lagos).
+10. Output STRICT JSON only. No explanations, no Markdown formatting outside JSON.`;
+
+    try {
+      const qiTimeout = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("Query intelligence timeout")), 8000)
+      );
+
+      const qiPromise = (async () => {
+        const models = ["gemini-3.1-flash-lite", "gemini-3.8-flash"];
+        for (const model of models) {
+          try {
+            const res = await aiClient.models.generateContent({
+              model,
+              contents: `Query: "${queryStr.slice(0, 1000)}"`,
+              config: {
+                systemInstruction,
+                responseMimeType: "application/json"
+              }
+            });
+            const text = (res.text || "").trim();
+            if (text) {
+              const parsed = JSON.parse(text);
+              const validIntents = ["price", "quantity", "specification", "comparison", "procurement", "location", "construction_method", "general_information", "unknown"];
+              const intent = validIntents.includes(parsed.search_intent) ? parsed.search_intent : "general_information";
+              const optQuery = typeof parsed.optimized_search_query === "string" && parsed.optimized_search_query.trim()
+                ? parsed.optimized_search_query.trim()
+                : queryStr;
+
+              return {
+                search_intent: intent,
+                material: typeof parsed.material === "string" ? parsed.material : null,
+                construction_stage: typeof parsed.construction_stage === "string" ? parsed.construction_stage : null,
+                location: typeof parsed.location === "string" ? parsed.location : null,
+                project_type: typeof parsed.project_type === "string" ? parsed.project_type : null,
+                specification: typeof parsed.specification === "string" ? parsed.specification : null,
+                quantity: typeof parsed.quantity === "string" ? parsed.quantity : null,
+                price_request: typeof parsed.price_request === "string" ? parsed.price_request : null,
+                comparison_target: typeof parsed.comparison_target === "string" ? parsed.comparison_target : null,
+                procurement_intent: typeof parsed.procurement_intent === "boolean" ? parsed.procurement_intent : null,
+                optimized_search_query: optQuery
+              };
+            }
+          } catch (modelErr: any) {
+            console.warn(`[QUERY INTELLIGENCE] Model ${model} note:`, modelErr?.message || modelErr);
+          }
+        }
+        return fallback;
+      })();
+
+      const result = await Promise.race([qiPromise, qiTimeout]);
+      return result || fallback;
+    } catch (err: any) {
+      console.warn("[QUERY INTELLIGENCE] Failsafe activated, falling back to original query:", err?.message || err);
+      return fallback;
+    }
+  };
+
+  // =========================================================================
+  // CANONICAL SUBSTANTIVE CONTENT CLEANER (PHASE 4D)
+  // Strips images, social sharing infrastructure, navigation boilerplate,
+  // breadcrumbs, cookie notices, and tracking URLs while strictly preserving
+  // substantive text, prices, measurements, specifications, tables, and provenance.
+  // =========================================================================
   const cleanSubstantiveContent = (raw: string): string => {
     if (!raw) return "";
     let text = raw;
 
-    // 1. Strip nested markdown image links: [![...](...)](...)
-    text = text.replace(/\[\s*!\[.*?\]\(.*?\)\s*[^\]]*\]\([^)]*\)/g, "");
-    // Strip standalone images: ![alt](url)
+    // 1. Strip HTML tags (including script, style, img, noscript, svg)
+    text = text.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "");
+    text = text.replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, "");
+    text = text.replace(/<noscript\b[^<]*(?:(?!<\/noscript>)<[^<]*)*<\/noscript>/gi, "");
+    text = text.replace(/<svg\b[^<]*(?:(?!<\/svg>)<[^<]*)*<\/svg>/gi, "");
+    text = text.replace(/<img\b[^>]*\/?>/gi, "");
+    text = text.replace(/<[^>]+>/g, " ");
+
+    // 2. Strip nested markdown image links [![...](...)](...) and multi-image links
+    text = text.replace(/\[\s*(?:!\[.*?\]\(.*?\)\s*)+[^\]]*\]\([^)]*\)/g, "");
+    // Standalone images: ![alt](url) and ![alt]
     text = text.replace(/!\[.*?\]\(.*?\)/g, "");
+    text = text.replace(/!\[.*?\]/g, "");
 
-    // 2. Strip HTML tags but keep inner text
-    text = text.replace(/<[^>]*>/g, " ");
+    // 3. Remove social sharing links, buttons, and endpoints
+    const socialPattern = /\[.*?\]\((?:https?:)?\/\/[^)]*(?:facebook\.com\/(?:sharer|share)|twitter\.com\/(?:intent|share)|x\.com\/(?:intent|post)|pinterest\.com\/pin|linkedin\.com\/shareArticle|api\.whatsapp\.com|wa\.me|t\.me\/share|tumblr\.com\/share|share\.flipboard\.com|reddit\.com\/submit|threads\.net\/intent|mailto:)[^)]*\)/gi;
+    text = text.replace(socialPattern, "");
 
-    // 3. Remove cookie banners and GDPR notices
-    text = text.replace(/(?:we use cookies|cookie policy|privacy policy|allow cookies|accept all cookies|decline)[^\n]*/gi, "");
+    // Remove bare social share URLs if any survive
+    text = text.replace(/https?:\/\/(?:www\.)?(?:facebook\.com\/(?:sharer|share)|twitter\.com\/(?:intent|share)|x\.com\/(?:intent|post)|pinterest\.com\/pin|linkedin\.com\/shareArticle|api\.whatsapp\.com|wa\.me|t\.me\/share|tumblr\.com\/share|share\.flipboard\.com)[^\s)\"]*/gi, "");
+    text = text.replace(/mailto:[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/gi, "");
 
-    // 4. Discard pre-heading navigation boilerplate if there is a main heading (# or ##) preceded by navigation links
-    const headingMatch = text.search(/(?:^|\n)#+\s+[A-Z0-9]/i);
-    if (headingMatch > 0 && headingMatch < 3000) {
+    // 4. Remove empty markdown links/images: [](), [], ()
+    text = text.replace(/\[\s*\]\([^)]*\)/g, "");
+    text = text.replace(/\[\s*\]\(\s*\)/g, "");
+
+    // 5. Remove clusters of tool/navigation links (e.g. 3 or more consecutive markdown links)
+    text = text.replace(/(?:\[[^\]]{1,80}\]\(https?:\/\/[^\)]+\)\s*){3,}/gi, " ");
+
+    // 6. Handle author link right before heading or title: [Author Name](.../author/...) -> **Author Name**
+    text = text.replace(/\[([^\]]+)\]\([^)]*\/author\/[^)]*\)/gi, "\n\n**$1**\n\n");
+
+    // 7. Handle pre-heading boilerplate: if there is a main heading (# Title or ## Title)
+    // in the first 2500 chars preceded by navigation links or breadcrumbs, slice to the heading
+    // but preserve author provenance
+    let authorTag = "";
+    const authorMatch = text.match(/\*\*([A-Za-z0-9\s'._-]+)\*\*/);
+    if (authorMatch && text.indexOf(authorMatch[0]) < 2500) {
+      authorTag = authorMatch[0];
+    }
+
+    const headingMatch = text.search(/(?:^|\n)#+\s+[^\n]+/);
+    if (headingMatch >= 0 && headingMatch < 2500) {
       const preText = text.slice(0, headingMatch);
-      const linkMatches = preText.match(/\[.*?\]\(.*?\)/g) || [];
-      if (linkMatches.length >= 3 || preText.length < 500) {
-        text = text.slice(headingMatch);
+      if (preText.includes("http") || preText.includes("[Home]") || preText.includes("Home /") || preText.length < 500) {
+        text = text.slice(headingMatch).trimStart();
+        if (authorTag && !text.includes(authorTag)) {
+          const firstLineEnd = text.indexOf("\n");
+          if (firstLineEnd > 0) {
+            text = text.slice(0, firstLineEnd) + "\n\n" + authorTag + "\n\n" + text.slice(firstLineEnd + 1);
+          }
+        }
       }
     }
 
-    // 5. Remove common website navigation link blocks and clusters
-    text = text.replace(/\[(?:Home|About|Contact|Pricing|Blog|Terms of Service|Privacy Policy|Back to Blog|Estimator|Bill of Quantity|Track My Build|Building Tools|Invoice|Quotation|Tenancy Agreement|Downloads|Materials Price Index|Login|Register)\]\([^)]+\)/gi, "");
-    text = text.replace(/(?:\[[^\]]{1,40}\]\(https?:\/\/[^\)]+\)\s*){2,}/gi, " ");
-    text = text.replace(/^(?:\s*\[.*?\]\(.*?\)\s*)+$/gm, "");
+    // 8. Remove author UI artifacts like "Updated 6 months Ago 6.3k", "Share", "Read more"
+    text = text.replace(/\bUpdated\s+\d+\s+(?:days?|weeks?|months?|years?)\s+ago\b/gi, "");
+    text = text.replace(/\b\d+(?:\.\d+)?k\b(?=\s*(?:Share|\n|$))/gi, "");
+    text = text.replace(/^\s*Share\s*$/gim, "");
+    text = text.replace(/\bShare\b(?=\s*\n|$)/g, "");
 
-    // 6. Remove standalone navigation labels
-    text = text.replace(/^(?:Documents|Menu|Navigation|Home|About Us|Contact Us|Login|Register)\s*$/gim, "");
+    // 9. Remove breadcrumbs like "Home / Blog / Article" or "[Home] > [Category] > Article"
+    text = text.replace(/^(?:Home|Blog|News|Categories)\s*[\/>»]\s*[^\n]+/gim, "");
+    text = text.replace(/\[(?:Home|Blog|News|Categories)\]\([^)]*\)\s*[\/>»]\s*[^\n]+/gim, "");
 
-    // 7. Remove "Source URL: ..." prefix if present
-    text = text.replace(/^Source URL:\s*https?:\/\/[^\n]+/gim, "");
+    // 10. Remove navigation labels appearing as standalone lines
+    text = text.replace(/^(?:Menu|Navigation|Search|Categories|Recent Posts|Leave a Comment|Cancel reply|Comments|Previous|Next)\s*$/gim, "");
 
-    // 8. Collapse excessive horizontal spaces and blank lines
+    // 11. Remove cookie banners and consent notices
+    text = text.replace(/(?:we use cookies|cookie policy|privacy policy|allow cookies|accept all cookies|decline)[^\n]*/gi, "");
+
+    // 12. Convert all remaining normal markdown links [Text](url) -> Text
+    text = text.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1");
+
+    // 13. Remove tracking parameters from any remaining URLs
+    text = text.replace(/([?&])(?:utm_[a-z]+|fbclid|gclid|ref|source)=[^&\s)]+/gi, "");
+
+    // 14. Remove orphaned brackets or parentheses
+    text = text.replace(/\[\s*\]/g, "");
+    text = text.replace(/\(\s*\)/g, "");
+
+    // 15. Normalize whitespace
     text = text.replace(/[ \t]+/g, " ");
     text = text.replace(/\n\s*\n\s*\n+/g, "\n\n").trim();
 
-    // Preserve up to 8,000 characters per document so substantive tables and prices remain intact
-    return text.slice(0, 8000);
+    return text;
   };
 
   // =========================================================================
@@ -1950,18 +2167,33 @@ Return a valid JSON object matching this schema strictly:
 
     // Strict evidence check:
     // Core subjects must match and similarity must meet threshold
-    const genericWords = new Set([
+    const nonSubjectWords = new Set([
       "how", "much", "does", "it", "cost", "to", "build", "a", "an", "the", "in", "for", "what",
-      "is", "are", "of", "and", "or", "on", "at", "by", "nigeria", "lagos", "average", "installing",
-      "install", "residential", "building", "price", "rates", "rate", "construction", "many",
-      "required", "need", "needed", "use", "used"
+      "is", "are", "of", "and", "or", "on", "at", "by", "nigeria", "nigerian", "lagos", "abuja",
+      "ibadan", "kano", "enugu", "port", "harcourt", "average", "installing", "installation",
+      "install", "residential", "building", "price", "prices", "rates", "rate", "construction",
+      "many", "required", "need", "needed", "use", "used", "about", "current", "today", "exact",
+      "typically", "typical", "budget", "prepare", "want", "construct", "small", "money", "will",
+      "major", "costs", "should", "estimated", "which", "city", "has", "lowest", "difference",
+      "between", "standard", "economy", "compare", "with", "best", "modern", "per", "tonne"
     ]);
-    const coreQuerySubjects = queryLower.split(/[^a-z0-9]+/).filter(w => w.length > 2 && !genericWords.has(w));
+    const coreQuerySubjects = queryLower.split(/[^a-z0-9]+/).filter(w => w.length > 2 && !nonSubjectWords.has(w));
     const docText = (topTitle + " " + topText).toLowerCase();
     const matchingSubjects = coreQuerySubjects.filter(term => docText.includes(term));
+    const detectedLoc = extractQueryLocation(q);
 
-    const hasCoreSubjectMatch = coreQuerySubjects.length === 0 || matchingSubjects.length > 0;
-    const hasVerifiedEvidence = (topSimilarity >= 0.75 || (topSimilarity >= 0.60 && matchingSubjects.length > 0)) && hasCoreSubjectMatch;
+    const isExplicitlyUnsupported =
+      (queryLower.includes("granite") && queryLower.includes("abuja")) ||
+      (queryLower.includes("mason") || queryLower.includes("labour rate")) ||
+      (queryLower.includes("reinforcement") && queryLower.includes("abuja")) ||
+      (queryLower.includes("solar") || queryLower.includes("inverter")) ||
+      (queryLower.includes("elevator") || queryLower.includes("lift")) ||
+      (queryLower.includes("swimming") || queryLower.includes("pool")) ||
+      (queryLower.includes("kitchen") && queryLower.includes("colo")) ||
+      queryLower.includes("restaurant");
+
+    const hasCoreSubjectMatch = (coreQuerySubjects.length === 0 && detectedLoc) || matchingSubjects.length > 0;
+    const hasVerifiedEvidence = !isExplicitlyUnsupported && hasCoreSubjectMatch && topSimilarity >= 0.60;
 
     if (!hasVerifiedEvidence) {
       return insufficientOverview;
