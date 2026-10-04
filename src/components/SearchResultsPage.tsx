@@ -647,7 +647,7 @@ ${textToCopy}`;
                 Shurefire Construction SERP
               </h2>
               <p className="text-xs text-slate-500 leading-relaxed max-w-sm mx-auto">
-                Live hybrid query engine powered by Supabase PostgreSQL and Gemini 1.5 Flash. Enter any technical query or material specification above.
+                Live construction query engine and material intelligence. Enter any technical query or material specification above.
               </p>
             </div>
             <div className="pt-2 flex flex-wrap justify-center gap-2 text-[11px] text-slate-500 font-medium">
@@ -706,12 +706,12 @@ ${textToCopy}`;
                 {isLoading ? (
                   <span className="flex items-center gap-1.5 text-[#ae2424] font-medium">
                     <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    Querying Supabase & synthesizing with Gemini...
+                    Loading Search Result.
                   </span>
                 ) : (
                   <span className="flex items-center gap-2">
                     <span>
-                      About {dbResults.length} database result{dbResults.length === 1 ? "" : "s"} ({searchTime} seconds)
+                      About {dbResults.length} result{dbResults.length === 1 ? "" : "s"} ({searchTime} seconds)
                     </span>
                   </span>
                 )}
@@ -726,14 +726,9 @@ ${textToCopy}`;
             </div>
 
             <div className="hidden sm:flex items-center gap-2 text-[11px] font-mono text-slate-400">
-              <span className="flex items-center gap-1">
-                <Database className="w-3 h-3 text-slate-400" />
-                <span>Supabase pgvector</span>
-              </span>
-              <span>&bull;</span>
               <span className="flex items-center gap-1 text-[#ae2424]">
                 <Sparkles className="w-3 h-3" />
-                <span>Gemini Intelligence</span>
+                <span>Construction Intelligence</span>
               </span>
             </div>
           </div>
@@ -769,23 +764,18 @@ ${textToCopy}`;
                     <Sparkles className="w-3.5 h-3.5" />
                   </div>
                   <h3 className="text-sm font-bold text-slate-900 tracking-tight flex items-center gap-1.5">
-                    <span>AI Overview</span>
-                    <span className="text-slate-400 font-normal">&bull;</span>
-                    <span className="text-xs font-semibold text-slate-600">Sovereign Construction Synthesis</span>
+                    <span>Overview</span>
                   </h3>
                 </div>
 
                 <div className="flex items-center gap-2">
-                  {/* Empty DB Match Badge (Requirement 4) */}
                   {dbResults.length === 0 ? (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-[11px] font-medium">
-                      <AlertCircle className="w-3 h-3 text-amber-600" />
-                      <span>AI Synthesized Answer (No direct database link matches found)</span>
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-slate-50 border border-slate-200 text-slate-600 text-[11px] font-medium">
+                      <span>Synthesized Summary</span>
                     </span>
                   ) : (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-white border border-slate-200 text-slate-600 text-[11px] font-mono">
-                      <Database className="w-3 h-3 text-slate-400" />
-                      <span>Grounded on {dbResults.length} DB record{dbResults.length === 1 ? "" : "s"}</span>
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-white border border-slate-200 text-slate-600 text-[11px]">
+                      <span>{dbResults.length} verified source{dbResults.length === 1 ? "" : "s"}</span>
                     </span>
                   )}
 
@@ -840,19 +830,15 @@ ${textToCopy}`;
                             </div>
                           </div>
                           <div className="flex items-center gap-1.5 shrink-0">
-                            {typeof src.similarity === "number" && (
-                              <span className="font-mono text-[10px] text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 font-bold">
-                                {(src.similarity * 100).toFixed(0)}%
-                              </span>
-                            )}
                             <a
                               href={src.url.startsWith("http") ? src.url : `https://${src.url}`}
                               target="_blank"
                               rel="noopener noreferrer"
                               onClick={(e) => e.stopPropagation()}
-                              className="text-slate-400 hover:text-[#ae2424] p-1"
+                              className="text-slate-400 hover:text-[#ae2424] p-1 inline-flex items-center gap-1 text-[11px] font-medium"
                               title="Open external source"
                             >
+                              <span>Visit</span>
                               <ExternalLink className="w-3.5 h-3.5" />
                             </a>
                           </div>
@@ -926,7 +912,7 @@ ${textToCopy}`;
                   )}
 
                   <div className="text-[11px] text-slate-400 italic pt-1">
-                    Grounded live via Gemini using verified Supabase vector retrieval (match_knowledge) and NIS standards.
+                    Grounded live using verified construction knowledge retrieval and NIS standards.
                   </div>
                 </div>
               )}
@@ -962,128 +948,70 @@ ${textToCopy}`;
               ===================================================================== */}
           <section className="space-y-5 pt-2">
             
+            {/* ===================================================================== 
+                SEARCH RESULTS LIST                                                   
+                Native, clean search entries without technical badges or metrics.    
+                ===================================================================== */}
             {dbResults.length > 0 ? (
               <div className="space-y-4">
                 <div className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-2 border-b border-slate-200/80 pb-2">
-                  <Database className="w-3.5 h-3.5 text-[#ae2424]" />
-                  <span>SOURCES ({dbResults.length})</span>
+                  <Search className="w-3.5 h-3.5 text-[#ae2424]" />
+                  <span>Results ({dbResults.length})</span>
                 </div>
 
-                {dbResults.map((result) => {
-                  const relevance = result.relevanceLabel || (typeof result.similarity === "number" ? (result.similarity >= 0.75 ? "HIGH" : result.similarity >= 0.55 ? "MEDIUM" : "LOW") : "LOW");
-                  return (
-                    <article
-                      key={result.id}
-                      onClick={() => setSelectedDrawerRecord(result)}
-                      className="group bg-white rounded-xl border border-slate-200/80 hover:border-slate-300 p-4 sm:p-5 hover:shadow-xs transition-all cursor-pointer space-y-3 text-left"
-                    >
-                      {/* Top Header: Source Domain + Material/Category + Content Length + Relevance Classification */}
-                      <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="font-mono text-[11px] text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200/80 inline-flex items-center gap-1.5 font-medium">
-                            <Globe className="w-3 h-3 text-slate-400" />
-                            <span>{result.domain || result.sourceDomain}</span>
-                          </span>
-
-                          <span className="text-slate-300">&bull;</span>
-
-                          <span className="text-[11px] font-semibold text-slate-600 bg-slate-50 px-2 py-0.5 rounded border border-slate-200/70">
-                            Category: {result.material_category || result.sourceType || "Procurement Standards"}
-                          </span>
-
-                          {result.contentLength !== undefined && result.contentLength > 0 && (
-                            <>
-                              <span className="text-slate-300">&bull;</span>
-                              <span className="text-[10px] font-mono text-slate-500 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200/60 inline-flex items-center gap-1" title={`${result.contentLength.toLocaleString()} characters indexed`}>
-                                <FileText className="w-2.5 h-2.5 text-slate-400" />
-                                <span>{result.contentLength >= 1000 ? `${(result.contentLength / 1000).toFixed(1)}k chars` : `${result.contentLength} chars`}</span>
-                              </span>
-                            </>
-                          )}
-                        </div>
-
-                        {/* Relevance Badge with real similarity score mapping */}
-                        {relevance && (
-                          <div className="flex items-center gap-1.5">
-                            {relevance === "HIGH" && (
-                              <span className="font-mono text-[10px] font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 inline-flex items-center gap-1 shadow-2xs">
-                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse" />
-                                <span>HIGH RELEVANCE{typeof result.similarity === "number" ? ` (${(result.similarity * 100).toFixed(1)}%)` : ""}</span>
-                              </span>
-                            )}
-                            {relevance === "MEDIUM" && (
-                              <span className="font-mono text-[10px] font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200 inline-flex items-center gap-1 shadow-2xs">
-                                <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                                <span>MEDIUM RELEVANCE{typeof result.similarity === "number" ? ` (${(result.similarity * 100).toFixed(1)}%)` : ""}</span>
-                              </span>
-                            )}
-                            {relevance === "LOW" && (
-                              <span className="font-mono text-[10px] font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200 inline-flex items-center gap-1 shadow-2xs">
-                                <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
-                                <span>LOW RELEVANCE{typeof result.similarity === "number" ? ` (${(result.similarity * 100).toFixed(1)}%)` : ""}</span>
-                              </span>
-                            )}
-                          </div>
-                        )}
+                {dbResults.map((result) => (
+                  <article
+                    key={result.id}
+                    onClick={() => setSelectedDrawerRecord(result)}
+                    className="group bg-white rounded-xl border border-slate-200/80 hover:border-slate-300 p-4 sm:p-5 hover:shadow-xs transition-all cursor-pointer space-y-2 text-left"
+                  >
+                    {/* Breadcrumb Header */}
+                    <div className="flex items-center gap-2 text-xs">
+                      <div className="w-4 h-4 rounded-full bg-slate-100 flex items-center justify-center shrink-0 border border-slate-200">
+                        <Globe className="w-2.5 h-2.5 text-slate-500" />
                       </div>
-
-                      {/* Title in bold slate with red hover */}
-                      <h3 className="text-base sm:text-lg font-bold text-slate-900 group-hover:text-[#ae2424] group-hover:underline transition-colors leading-snug">
-                        {result.title}
-                      </h3>
-
-                      {/* Content Indicator Badges (Price, Specs, Quantity) */}
-                      {(result.has_price_data || result.has_specification_data || result.has_quantity_data) && (
-                        <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                          {result.has_price_data && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200/80">
-                              <Coins className="w-3 h-3 text-emerald-600" />
-                              <span>₦ Price Data</span>
-                            </span>
-                          )}
-                          {result.has_specification_data && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-800 border border-blue-200/80">
-                              <Layers className="w-3 h-3 text-blue-600" />
-                              <span>Technical Specs</span>
-                            </span>
-                          )}
-                          {result.has_quantity_data && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-purple-50 text-purple-800 border border-purple-200/80">
-                              <Hash className="w-3 h-3 text-purple-600" />
-                              <span>Quantities</span>
-                            </span>
-                          )}
-                        </div>
+                      <span className="text-xs text-slate-700 font-medium">
+                        {result.domain || result.sourceDomain}
+                      </span>
+                      {result.material_category && (
+                        <>
+                          <span className="text-slate-300">&rsaquo;</span>
+                          <span className="text-xs text-slate-500">{result.material_category}</span>
+                        </>
                       )}
+                    </div>
 
-                      {/* 3-line query-focused excerpt */}
-                      <p className="text-xs sm:text-sm text-slate-600 line-clamp-3 leading-relaxed bg-slate-50/70 p-2.5 rounded-lg border border-slate-100 font-sans">
-                        <span className="font-semibold text-slate-500">Relevant excerpt: </span>
-                        "{result.excerpt || (result.cleanedContent ? result.cleanedContent.slice(0, 240) : result.content.replace(/\[\s*!\[.*?\]\(.*?\)\s*[^\]]*\]\([^)]*\)/g, "").replace(/!\[.*?\]\(.*?\)/g, "").replace(/\[([^\]]+)\]\([^)]+\)/g, "$1").replace(/[#*`_]/g, "").trim().slice(0, 240))}"
-                      </p>
+                    {/* Title */}
+                    <h3 className="text-base sm:text-lg font-bold text-slate-900 group-hover:text-[#ae2424] group-hover:underline transition-colors leading-snug">
+                      {result.title}
+                    </h3>
 
-                      {/* Card Footer Actions */}
-                      <div className="pt-2 flex items-center justify-between text-[11px] text-slate-500 border-t border-slate-100">
-                        <span className="text-[#ae2424] font-semibold group-hover:underline inline-flex items-center gap-1">
-                          <span>Open Deep Intelligence Drawer</span>
-                          <ArrowRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
-                        </span>
+                    {/* Native Snippet */}
+                    <p className="text-xs sm:text-sm text-slate-600 line-clamp-2 sm:line-clamp-3 leading-relaxed font-sans">
+                      {result.excerpt || (result.cleanedContent ? result.cleanedContent.slice(0, 240) : result.content.replace(/\[\s*!\[.*?\]\(.*?\)\s*[^\]]*\]\([^)]*\)/g, "").replace(/!\[.*?\]\(.*?\)/g, "").replace(/\[([^\]]+)\]\([^)]+\)/g, "$1").replace(/[#*`_]/g, "").trim().slice(0, 240))}
+                    </p>
 
-                        <a
-                          href={result.url.startsWith("http") ? result.url : `https://${result.url}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={(e) => e.stopPropagation()}
-                          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-[#ae2424] font-semibold transition-colors border border-slate-200"
-                          title="Open original webpage in new tab"
-                        >
-                          <span>Visit Source</span>
-                          <ExternalLink className="w-3 h-3 shrink-0" />
-                        </a>
-                      </div>
-                    </article>
-                  );
-                })}
+                    {/* Card Footer Actions */}
+                    <div className="pt-2 flex items-center justify-between text-[11px] text-slate-400 border-t border-slate-100">
+                      <span className="text-[#ae2424] font-semibold group-hover:underline inline-flex items-center gap-1">
+                        <span>View details</span>
+                        <ArrowRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
+                      </span>
+
+                      <a
+                        href={result.url.startsWith("http") ? result.url : `https://${result.url}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-600 hover:text-[#ae2424] font-semibold transition-colors border border-slate-200"
+                        title="Open original webpage in new tab"
+                      >
+                        <span>Visit Source</span>
+                        <ExternalLink className="w-3 h-3 shrink-0" />
+                      </a>
+                    </div>
+                  </article>
+                ))}
               </div>
             ) : !isLoading ? (
               /* When vector retrieval returns 0 records */
@@ -1128,31 +1056,13 @@ ${textToCopy}`;
             <div className="p-5 sm:p-6 border-b border-[#e2e8f0] bg-white sticky top-0 z-10 flex items-start justify-between gap-4">
               <div className="space-y-1.5 flex-1 pr-2">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-50 text-[#ae2424] border border-rose-200">
-                    {selectedDrawerRecord.material_category}
-                  </span>
-                  <span className="font-mono text-xs text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 inline-flex items-center gap-1 font-medium">
+                  <span className="font-mono text-xs text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 inline-flex items-center gap-1 font-medium">
                     <Globe className="w-3 h-3 text-slate-400" />
                     <span>{selectedDrawerRecord.domain || selectedDrawerRecord.sourceDomain}</span>
                   </span>
-                  {selectedDrawerRecord.relevanceLabel && (
-                    <span className={`font-mono text-[10px] font-bold px-2 py-0.5 rounded-full border inline-flex items-center gap-1 ${
-                      selectedDrawerRecord.relevanceLabel === "HIGH" 
-                        ? "text-emerald-800 bg-emerald-50 border-emerald-200" 
-                        : selectedDrawerRecord.relevanceLabel === "MEDIUM" 
-                        ? "text-amber-800 bg-amber-50 border-amber-200" 
-                        : "text-slate-600 bg-slate-100 border-slate-200"
-                    }`}>
-                      <span>{selectedDrawerRecord.relevanceLabel} RELEVANCE</span>
-                      {typeof selectedDrawerRecord.similarity === "number" && (
-                        <span>({(selectedDrawerRecord.similarity * 100).toFixed(1)}%)</span>
-                      )}
-                    </span>
-                  )}
-                  {selectedDrawerRecord.contentLength !== undefined && selectedDrawerRecord.contentLength > 0 && (
-                    <span className="font-mono text-[10px] text-slate-500 bg-slate-50 px-2 py-0.5 rounded border border-slate-200 inline-flex items-center gap-1">
-                      <FileText className="w-3 h-3 text-slate-400" />
-                      <span>{selectedDrawerRecord.contentLength.toLocaleString()} characters</span>
+                  {selectedDrawerRecord.material_category && (
+                    <span className="px-2 py-0.5 rounded text-xs font-semibold bg-slate-50 text-slate-700 border border-slate-200">
+                      {selectedDrawerRecord.material_category}
                     </span>
                   )}
                 </div>
@@ -1217,24 +1127,13 @@ ${textToCopy}`;
                 </div>
               </div>
 
-              {/* Database Context Metadata Card */}
+              {/* Source Context Card */}
               <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs space-y-4 text-xs">
                 <div className="font-bold text-slate-800 flex items-center justify-between border-b border-slate-100 pb-2.5">
                   <div className="flex items-center gap-1.5">
-                    <Database className="w-3.5 h-3.5 text-[#ae2424]" />
-                    <span className="font-semibold uppercase tracking-wider text-[11px] text-slate-700">Source Intelligence & Provenance</span>
+                    <Globe className="w-3.5 h-3.5 text-[#ae2424]" />
+                    <span className="font-semibold uppercase tracking-wider text-[11px] text-slate-700">Source Reference Details</span>
                   </div>
-                  {selectedDrawerRecord.relevanceLabel && (
-                    <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold font-mono border ${
-                      selectedDrawerRecord.relevanceLabel === "HIGH"
-                        ? "bg-emerald-50 text-emerald-800 border-emerald-200"
-                        : selectedDrawerRecord.relevanceLabel === "MEDIUM"
-                        ? "bg-amber-50 text-amber-800 border-amber-200"
-                        : "bg-slate-100 text-slate-700 border-slate-200"
-                    }`}>
-                      {selectedDrawerRecord.relevanceLabel} RELEVANCE
-                    </span>
-                  )}
                 </div>
 
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3.5 text-[11px] text-slate-600">
@@ -1251,43 +1150,15 @@ ${textToCopy}`;
                     </span>
                   </div>
                   <div>
-                    <span className="text-slate-400 block font-medium">Relevance:</span>
-                    <span className="font-semibold text-slate-900 block mt-0.5">
-                      {selectedDrawerRecord.relevanceLabel || "STANDARD"}
-                      {typeof selectedDrawerRecord.similarity === "number" && (
-                        <span className="font-mono text-slate-500 font-normal"> — {(selectedDrawerRecord.similarity * 100).toFixed(2)}%</span>
-                      )}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 block font-medium">Original Content:</span>
-                    <span className="font-mono text-slate-800 font-medium block mt-0.5">
-                      {selectedDrawerRecord.contentLength 
-                        ? (selectedDrawerRecord.contentLength >= 1000 
-                            ? `${(selectedDrawerRecord.contentLength / 1000).toFixed(2)}k characters` 
-                            : `${selectedDrawerRecord.contentLength} characters`)
-                        : `${selectedDrawerRecord.content.length} characters`}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 block font-medium">Cleaned Content:</span>
-                    <span className="font-mono text-slate-800 font-medium block mt-0.5">
-                      {selectedDrawerRecord.cleanedContentLength
-                        ? (selectedDrawerRecord.cleanedContentLength >= 1000
-                            ? `${(selectedDrawerRecord.cleanedContentLength / 1000).toFixed(2)}k characters`
-                            : `${selectedDrawerRecord.cleanedContentLength} characters`)
-                        : `${(selectedDrawerRecord.cleanedContent || selectedDrawerRecord.content).length} characters`}
-                    </span>
-                  </div>
-                  <div>
                     <span className="text-slate-400 block font-medium">Indexed Date:</span>
                     <span className="text-slate-700 block mt-0.5">
                       {selectedDrawerRecord.created_at
                         ? new Date(selectedDrawerRecord.created_at).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })
-                        : "Verified Archive"}
+                        : "Verified Reference"}
                     </span>
                   </div>
                 </div>
+              </div>
 
                 {/* Data Indicator Badges */}
                 <div className="pt-3 border-t border-slate-100 space-y-1.5">

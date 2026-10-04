@@ -16,6 +16,23 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    // Phase 5A: Construction Intelligence collections
+    match /construction_projects/{projectId} {
+      allow read, write: if true;
+    }
+
+    match /construction_documents/{docId} {
+      allow read, write: if true;
+    }
+
+    match /construction_analyses/{analysisId} {
+      allow read, write: if true;
+    }
+
+    match /construction_action_results/{actionId} {
+      allow read, write: if true;
+    }
+
     // Collection: Search answer caches
     match /search_cache/{cacheId} {
       allow read, write: if true;

@@ -115,6 +115,25 @@
         "updatedAt": { "type": "string", "format": "date-time", "description": "Update timestamp" }
       },
       "required": ["id", "sessionId", "filename", "mimeType", "fileSize", "uploadTimestamp", "analysisStatus"]
+    },
+    "construction_project": {
+      "title": "Construction Project",
+      "description": "Analyzed construction project profile extracted from uploaded documents.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique project identifier" },
+        "projectName": { "type": "string", "description": "Project title or descriptor" },
+        "projectType": { "type": "string", "description": "Residential, commercial, civil, or industrial" },
+        "buildingType": { "type": "string", "description": "Specific building type (e.g. Duplex, Bungalow)" },
+        "location": { "type": "string", "description": "Detected or default project location" },
+        "floors": { "type": "integer", "description": "Number of above-ground floors" },
+        "units": { "type": "integer", "description": "Number of residential/office units" },
+        "floorArea": { "type": "number", "description": "Total floor area in square metres" },
+        "buildingFootprint": { "type": "number", "description": "Ground footprint in square metres" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Update timestamp" }
+      },
+      "required": ["id", "projectType", "buildingType", "createdAt"]
     }
   },
   "firestore": {
@@ -137,6 +156,14 @@
     "user_documents/{docId}": {
       "schema": "user_document",
       "description": "Uploaded architectural drawings, BOQs, and multimodal analysis data."
+    },
+    "construction_projects/{projectId}": {
+      "schema": "construction_project",
+      "description": "Structured project intelligence profiles."
+    },
+    "construction_documents/{docId}": {
+      "schema": "user_document",
+      "description": "Construction documents linked to projects."
     }
   }
 }

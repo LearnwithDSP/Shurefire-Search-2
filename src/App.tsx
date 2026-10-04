@@ -36,6 +36,7 @@ import SearchResultsPage from "./components/SearchResultsPage";
 import ShureEstimatePage from "./components/ShureEstimatePage";
 import ProcureWithShurefirePage from "./components/ProcureWithShurefirePage";
 import DocumentIntelligencePage from "./components/DocumentIntelligencePage";
+import ConstructionIntelligence from "./components/ConstructionIntelligence";
 import { cleanSubstantiveContent } from "./cleanSubstantiveContent";
 
 interface SpecCalculation {
@@ -677,18 +678,21 @@ Source: Shurefire Sovereign Construction Search (https://shurefire.ng)`;
     );
   }
 
-  // Dedicated route support for Document & Building Plan Intelligence (#/analyze, /analyze, /document-intelligence)
-  const isAnalyzeRoute =
+  // Dedicated route support for Construction & Document Intelligence (#/analyze, /analyze, #/construction, /construction)
+  const isConstructionRoute =
     currentHash.toLowerCase() === "#/analyze" ||
     currentHash.toLowerCase() === "#analyze" ||
+    currentHash.toLowerCase() === "#/construction" ||
+    currentHash.toLowerCase() === "#construction" ||
     currentHash.toLowerCase() === "#/document-intelligence" ||
     currentHash.toLowerCase() === "#document-intelligence" ||
     currentPath.toLowerCase() === "/analyze" ||
+    currentPath.toLowerCase() === "/construction" ||
     currentPath.toLowerCase() === "/document-intelligence";
 
-  if (isAnalyzeRoute) {
+  if (isConstructionRoute) {
     return (
-      <DocumentIntelligencePage
+      <ConstructionIntelligence
         onNavigateHome={handleResetToLanding}
         onOpenAdmin={() => setShowAdminModal(true)}
       />
