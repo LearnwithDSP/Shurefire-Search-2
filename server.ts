@@ -25,6 +25,7 @@ import { MaterialCategory, SupplyRegion, GroundingSource } from "./src/types.js"
 import { db } from "./src/firebase.js";
 import { doc, getDoc, setDoc, getDocs, collection, deleteDoc } from "firebase/firestore";
 import { getSupabase, isSupabaseConfigured } from "./src/supabase.js";
+import { createDocumentIntelligenceRouter } from "./src/documentIntelligenceRoutes.js";
 
 const currentFilename = typeof __filename !== "undefined"
   ? __filename
@@ -3194,6 +3195,12 @@ Be highly accurate. Structure the response strictly according to the specified s
       }
     }
   });
+
+  // =========================================================================
+  // DOCUMENT & BUILDING PLAN INTELLIGENCE MODULE
+  // Isolated multimodal architectural drawing, BOQ, and specification analysis
+  // =========================================================================
+  app.use("/api/documents", createDocumentIntelligenceRouter(getGeminiClient));
 
   // Standalone HTTP Server listener (Local Development / Docker Container)
   // When running in Vercel Serverless environment, VERCEL=1 is set, so this listener is skipped

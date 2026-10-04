@@ -98,6 +98,23 @@
         "createdAt": { "type": "string", "format": "date-time", "description": "ISO log of lead generation" }
       },
       "required": ["id", "name", "phone", "email", "category", "region", "materialsNeeded", "projectStage", "timeline", "source", "status", "createdAt"]
+    },
+    "user_document": {
+      "title": "User Document",
+      "description": "User uploaded architectural plans, BOQs, or construction documents with structured analysis.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique document session ID" },
+        "sessionId": { "type": "string", "description": "Client session UUID" },
+        "filename": { "type": "string", "description": "Original uploaded filename" },
+        "mimeType": { "type": "string", "description": "MIME type (PDF, PNG, JPG, WebP)" },
+        "fileSize": { "type": "integer", "description": "File size in bytes" },
+        "uploadTimestamp": { "type": "string", "format": "date-time", "description": "Upload ISO timestamp" },
+        "analysisStatus": { "type": "string", "description": "Current analysis status" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Update timestamp" }
+      },
+      "required": ["id", "sessionId", "filename", "mimeType", "fileSize", "uploadTimestamp", "analysisStatus"]
     }
   },
   "firestore": {
@@ -116,6 +133,10 @@
     "leads/{leadId}": {
       "schema": "lead",
       "description": "List of massive callback and wholesale matching leads secured."
+    },
+    "user_documents/{docId}": {
+      "schema": "user_document",
+      "description": "Uploaded architectural drawings, BOQs, and multimodal analysis data."
     }
   }
 }

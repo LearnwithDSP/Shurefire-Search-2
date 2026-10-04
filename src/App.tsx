@@ -35,6 +35,7 @@ import AdminDashboard from "./components/AdminDashboard";
 import SearchResultsPage from "./components/SearchResultsPage";
 import ShureEstimatePage from "./components/ShureEstimatePage";
 import ProcureWithShurefirePage from "./components/ProcureWithShurefirePage";
+import DocumentIntelligencePage from "./components/DocumentIntelligencePage";
 import { cleanSubstantiveContent } from "./cleanSubstantiveContent";
 
 interface SpecCalculation {
@@ -676,6 +677,24 @@ Source: Shurefire Sovereign Construction Search (https://shurefire.ng)`;
     );
   }
 
+  // Dedicated route support for Document & Building Plan Intelligence (#/analyze, /analyze, /document-intelligence)
+  const isAnalyzeRoute =
+    currentHash.toLowerCase() === "#/analyze" ||
+    currentHash.toLowerCase() === "#analyze" ||
+    currentHash.toLowerCase() === "#/document-intelligence" ||
+    currentHash.toLowerCase() === "#document-intelligence" ||
+    currentPath.toLowerCase() === "/analyze" ||
+    currentPath.toLowerCase() === "/document-intelligence";
+
+  if (isAnalyzeRoute) {
+    return (
+      <DocumentIntelligencePage
+        onNavigateHome={handleResetToLanding}
+        onOpenAdmin={() => setShowAdminModal(true)}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-white text-[#0f172a] flex flex-col font-sans selection:bg-[#ae2424]/10 selection:text-[#ae2424]">
       
@@ -685,8 +704,19 @@ Source: Shurefire Sovereign Construction Search (https://shurefire.ng)`;
       {!hasSearched ? (
         <div className="flex-1 flex flex-col justify-between py-5 px-4 sm:px-8">
           
-          {/* Top Bar Header - Only Round RB icon for admin navigation */}
-          <header className="w-full max-w-7xl mx-auto flex items-center justify-end select-none h-14">
+          {/* Top Bar Header - Document Intelligence shortcut + RB admin icon */}
+          <header className="w-full max-w-7xl mx-auto flex items-center justify-between select-none h-14">
+            <button
+              onClick={() => {
+                window.location.hash = "#/analyze";
+                setCurrentHash("#/analyze");
+              }}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold text-slate-700 hover:text-[#ae2424] hover:bg-slate-100 transition-all cursor-pointer border border-slate-200 shadow-2xs"
+            >
+              <FileText className="w-3.5 h-3.5 text-[#ae2424]" />
+              <span>Document Intelligence</span>
+            </button>
+
             {/* Circular RB Profile Badge - Admin Navigation to Login Form */}
             <button
               onClick={() => setShowAdminModal(true)}
@@ -805,14 +835,55 @@ Source: Shurefire Sovereign Construction Search (https://shurefire.ng)`;
                 </div>
               )}
 
-              {/* Search Submit Action Button */}
-              <div className="flex items-center justify-center gap-3 pt-1">
+              {/* Search Submit Action Button + Analyze Building Plan Prominent Action */}
+              <div className="flex flex-wrap items-center justify-center gap-2.5 pt-1">
                 <button
                   type="submit"
                   className="px-6 py-2.5 rounded-full bg-[#f8fafc] hover:bg-slate-100 border border-[#e2e8f0] hover:border-slate-300 text-xs sm:text-sm font-bold text-slate-800 transition-all cursor-pointer shadow-2xs active:scale-95 inline-flex items-center gap-2"
                 >
                   <Search className="w-3.5 h-3.5 text-[#ae2424]" />
                   <span>Search Shurefire</span>
+                </button>
+
+                {/* Prominent Entry Point: Analyze a Building Plan */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    window.location.hash = "#/analyze";
+                    setCurrentHash("#/analyze");
+                  }}
+                  className="px-6 py-2.5 rounded-full bg-[#ae2424] hover:bg-[#931f1f] text-white text-xs sm:text-sm font-bold transition-all cursor-pointer shadow-xs active:scale-95 inline-flex items-center gap-2"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                  <span>Analyze a Building Plan</span>
+                </button>
+              </div>
+
+              {/* Upload Document / Image Quick Links */}
+              <div className="flex flex-wrap items-center justify-center gap-3 pt-2 text-xs text-slate-500 font-medium">
+                <span>Or upload directly:</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    window.location.hash = "#/analyze";
+                    setCurrentHash("#/analyze");
+                  }}
+                  className="hover:text-[#ae2424] font-semibold underline underline-offset-2 cursor-pointer inline-flex items-center gap-1"
+                >
+                  <FileText className="w-3 h-3 text-[#ae2424]" />
+                  <span>Upload Document</span>
+                </button>
+                <span>•</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    window.location.hash = "#/analyze";
+                    setCurrentHash("#/analyze");
+                  }}
+                  className="hover:text-[#ae2424] font-semibold underline underline-offset-2 cursor-pointer inline-flex items-center gap-1"
+                >
+                  <Layers className="w-3 h-3 text-[#ae2424]" />
+                  <span>Upload Image</span>
                 </button>
               </div>
             </form>
