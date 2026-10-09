@@ -35,7 +35,10 @@ import {
   ProjectCompletenessAudit,
   DetectedFact,
   MaterialBreakdownRow,
-  EvidenceTally
+  EvidenceTally,
+  RebarScheduleRow,
+  CategoryCostRange,
+  CementStageRequirement
 } from "../constructionIntelligenceTypes";
 
 interface ConstructionIntelligenceProps {
@@ -924,6 +927,114 @@ export default function ConstructionIntelligence({
               </div>
             )}
 
+            {/* ACTION-SPECIFIC MODULE: CEMENT STAGES REQUIREMENT */}
+            {actionResult.action === "cement_requirement" && actionResult.cementStages && actionResult.cementStages.length > 0 && (
+              <div className="space-y-4 pt-2">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-black uppercase tracking-wider text-slate-900">
+                    CEMENT REQUIREMENT BY STRUCTURAL STAGE
+                  </h3>
+                  <span className="text-[11px] text-slate-500 font-medium">
+                    Standard 50kg bags
+                  </span>
+                </div>
+                <div className="overflow-x-auto rounded-xl border border-slate-200">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-slate-100/80 text-slate-700 font-bold border-b border-slate-200">
+                        <th className="py-2.5 px-3">Structural Stage / Component</th>
+                        <th className="py-2.5 px-3 text-right">Cement Bags</th>
+                        <th className="py-2.5 px-3">Mix Design &amp; Factor</th>
+                        <th className="py-2.5 px-3">Evidence</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 font-medium">
+                      {actionResult.cementStages.map((stg: CementStageRequirement, sIdx: number) => (
+                        <tr key={sIdx} className="hover:bg-slate-50/80">
+                          <td className="py-2.5 px-3 font-bold text-slate-900">{stg.stage}</td>
+                          <td className="py-2.5 px-3 text-right font-black text-slate-900 whitespace-nowrap">{stg.bags.toLocaleString()} bags</td>
+                          <td className="py-2.5 px-3 text-slate-600 font-mono text-[11px]">{stg.mixRatio}</td>
+                          <td className="py-2.5 px-3 whitespace-nowrap">{renderEvidenceBadge(stg.evidenceLevel)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot className="bg-slate-50 font-bold text-slate-900 border-t-2 border-slate-300">
+                      <tr>
+                        <td className="py-2.5 px-3 font-extrabold">TOTAL CALCULATED CEMENT:</td>
+                        <td className="py-2.5 px-3 text-right font-black text-[#ae2424]">
+                          {actionResult.result?.lowRangeBags?.toLocaleString()} – {actionResult.result?.highRangeBags?.toLocaleString()} bags
+                        </td>
+                        <td colSpan={2} className="py-2.5 px-3 text-xs text-slate-500">
+                          {actionResult.result?.gradeRecommended || "Grade 42.5R structural / Grade 32.5 masonry"}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* ACTION-SPECIFIC MODULE: LAGOS COST ESTIMATE BREAKDOWN */}
+            {actionResult.action === "cost_estimate" && actionResult.categoryCostRanges && (
+              <div className="space-y-4 pt-2">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-2">
+                  <h3 className="text-xs font-black uppercase tracking-wider text-slate-900">
+                    MAJOR CONSTRUCTION CATEGORIES (LAGOS BENCHMARK)
+                  </h3>
+                  <div className="flex items-center gap-2 text-xs font-mono text-slate-600 font-bold">
+                    <span>Cost intensity: {actionResult.result?.costIntensityDisplay || actionResult.result?.ratePerSquareMetre}</span>
+                  </div>
+                </div>
+
+                {/* Major Categories Table */}
+                <div className="overflow-x-auto rounded-xl border border-slate-200">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-slate-100/80 text-slate-700 font-bold border-b border-slate-200">
+                        <th className="py-2.5 px-3">Construction Category</th>
+                        <th className="py-2.5 px-3 text-right">Estimated Range (NGN)</th>
+                        <th className="py-2.5 px-3">Evidence</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 font-medium">
+                      {actionResult.categoryCostRanges.map((cat: CategoryCostRange, cIdx: number) => (
+                        <tr key={cIdx} className="hover:bg-slate-50/80">
+                          <td className="py-2.5 px-3 font-bold text-slate-900">{cat.category}</td>
+                          <td className="py-2.5 px-3 text-right font-black text-slate-900 whitespace-nowrap">
+                            ₦{(cat.lowAmountNaira / 1e6).toFixed(2)}M – ₦{(cat.highAmountNaira / 1e6).toFixed(2)}M
+                          </td>
+                          <td className="py-2.5 px-3 whitespace-nowrap">{renderEvidenceBadge(cat.evidenceLevel)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Materials vs Labour split & Provenance */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                  <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
+                    <span className="text-[11px] font-bold text-slate-500 uppercase block">Materials Component (~68%)</span>
+                    <span className="text-lg font-black text-slate-900 block mt-0.5">
+                      {actionResult.result?.materialsEstimateDisplay || `₦${(actionResult.result?.medianNaira * 0.68 / 1e6).toFixed(1)}M`}
+                    </span>
+                    <p className="text-[11px] text-slate-500 mt-1">Direct construction materials indexed to Lagos depot rates.</p>
+                  </div>
+                  <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
+                    <span className="text-[11px] font-bold text-slate-500 uppercase block">Artisan &amp; Skilled Labour (~32%)</span>
+                    <span className="text-lg font-black text-slate-900 block mt-0.5">
+                      {actionResult.result?.labourEstimateDisplay || `₦${(actionResult.result?.medianNaira * 0.32 / 1e6).toFixed(1)}M`}
+                    </span>
+                    <p className="text-[11px] text-slate-500 mt-1">Masons, iron benders, carpenters, plumbers &amp; electricians.</p>
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-lg bg-amber-50/70 border border-amber-200 text-amber-900 text-xs">
+                  <span className="font-bold">Price-Date &amp; Provenance: </span>
+                  <span>{actionResult.result?.priceProvenanceDate || "Indexed against Q1/Q2 2025/2026 Lagos wholesale depot benchmarks (Alaba / Coker / Lekki)."}</span>
+                </div>
+              </div>
+            )}
+
             {/* ACTION-SPECIFIC MODULE: PRELIMINARY BOQ SCHEDULE */}
             {actionResult.action === "preliminary_boq" && actionResult.result?.items && (
               <div className="space-y-4 pt-2">
@@ -1102,6 +1213,57 @@ export default function ConstructionIntelligence({
                       <li key={idx}>{m}</li>
                     ))}
                   </ul>
+                </div>
+              </div>
+            )}
+
+            {/* ACTION-SPECIFIC MODULE: REBAR SCHEDULE WHEN STRUCTURAL DATA PRESENT */}
+            {actionResult.action === "rebar_requirement" && actionResult.rebarScheduleTable && actionResult.rebarScheduleTable.length > 0 && (
+              <div className="space-y-4 pt-2">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-2">
+                  <h3 className="text-xs font-black uppercase tracking-wider text-slate-900">
+                    TRACEABLE REINFORCEMENT STEEL SCHEDULE
+                  </h3>
+                  <span className="text-xs font-bold text-emerald-700 flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>Total Tonnage: {actionResult.result?.totalTonnageTonnes || "Calculated"} Tonnes</span>
+                  </span>
+                </div>
+
+                <div className="overflow-x-auto rounded-xl border border-slate-200">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-slate-100/80 text-slate-700 font-bold border-b border-slate-200">
+                        <th className="py-2.5 px-3">Bar Diameter</th>
+                        <th className="py-2.5 px-3">Commercial Length</th>
+                        <th className="py-2.5 px-3 text-right">Number of Bars</th>
+                        <th className="py-2.5 px-3 text-right">Total Length (m)</th>
+                        <th className="py-2.5 px-3 text-right">Estimated Weight</th>
+                        <th className="py-2.5 px-3">Evidence</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 font-medium">
+                      {actionResult.rebarScheduleTable.map((rb: RebarScheduleRow, rIdx: number) => (
+                        <tr key={rIdx} className="hover:bg-slate-50/80">
+                          <td className="py-2.5 px-3 font-bold text-slate-900">{rb.barDiameter}</td>
+                          <td className="py-2.5 px-3 text-slate-600">{rb.length}</td>
+                          <td className="py-2.5 px-3 text-right font-black text-slate-900 whitespace-nowrap">{rb.numberOfBars.toLocaleString()}</td>
+                          <td className="py-2.5 px-3 text-right text-slate-700 whitespace-nowrap">{rb.totalLengthM.toLocaleString()} m</td>
+                          <td className="py-2.5 px-3 text-right font-black text-slate-900 whitespace-nowrap">{rb.estimatedWeightTonnes} Tonnes</td>
+                          <td className="py-2.5 px-3 whitespace-nowrap">{renderEvidenceBadge(rb.evidenceLevel)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot className="bg-slate-50 font-bold text-slate-900 border-t-2 border-slate-300">
+                      <tr>
+                        <td colSpan={4} className="py-2.5 px-3 text-right font-extrabold">TOTAL STEEL TONNAGE:</td>
+                        <td className="py-2.5 px-3 text-right font-black text-[#ae2424]">
+                          {actionResult.result?.totalTonnageTonnes} Tonnes
+                        </td>
+                        <td></td>
+                      </tr>
+                    </tfoot>
+                  </table>
                 </div>
               </div>
             )}

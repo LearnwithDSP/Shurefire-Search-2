@@ -1017,13 +1017,13 @@ ${textToCopy}`;
               /* When vector retrieval returns 0 records */
               <div className="p-8 rounded-2xl bg-slate-50 border border-slate-200/90 text-center space-y-3">
                 <div className="w-12 h-12 rounded-full bg-slate-200/60 text-slate-500 flex items-center justify-center mx-auto">
-                  <Database className="w-6 h-6 text-slate-400" />
+                  <Search className="w-6 h-6 text-slate-400" />
                 </div>
                 <h4 className="text-base font-bold text-slate-800">
-                  Insufficient Verified Indexed Information
+                  No Matching Construction Results Found
                 </h4>
                 <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
-                  We couldn't retrieve enough verified construction records from the indexed knowledge base to answer <span className="font-semibold text-slate-700">"{activeQuery}"</span>.
+                  We couldn't find matching verified construction records for <span className="font-semibold text-slate-700">"{activeQuery}"</span>.
                 </p>
                 <p className="text-xs text-slate-400">
                   Try searching for a specific material (e.g. <em>Dangote cement</em>), structural stage, or building type.
@@ -1099,7 +1099,7 @@ ${textToCopy}`;
                   <div className="flex items-center gap-2">
                     <FileText className="w-4 h-4 text-[#ae2424]" />
                     <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800">
-                      Full Ingested Technical Text
+                      Source Article & Technical Content
                     </h3>
                   </div>
 
@@ -1158,7 +1158,6 @@ ${textToCopy}`;
                     </span>
                   </div>
                 </div>
-              </div>
 
                 {/* Data Indicator Badges */}
                 <div className="pt-3 border-t border-slate-100 space-y-1.5">

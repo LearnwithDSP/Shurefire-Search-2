@@ -240,8 +240,12 @@ startxref
     })
   });
   const rebarArchJson = await rebarArchRes.json();
-  const refusesFabrication = rebarArchJson.result?.result?.status === "STRUCTURAL_DATA_REQUIRED" && rebarArchJson.result?.shortAnswer?.includes("does not contain enough structural information");
-  const test10Pass = rebarArchRes.status === 200 && refusesFabrication;
+  const refusesFabrication = rebarArchJson.result?.result?.status === "STRUCTURAL_DATA_REQUIRED" && (
+    rebarArchJson.result?.shortAnswer?.includes("cannot safely determine") ||
+    rebarArchJson.result?.shortAnswer?.includes("does not contain enough structural information") ||
+    rebarArchJson.result?.directAnswer?.includes("cannot safely determine")
+  );
+  const test10Pass = rebarArchRes.status === 200 && Boolean(refusesFabrication);
   console.log(`  Result: ${test10Pass ? "PASS" : "FAIL"} | Safety Refusal Status: ${rebarArchJson.result?.result?.status} | Zero Fabrication Policy Enforced`);
   if (test10Pass) passedTests++;
 

@@ -897,7 +897,7 @@ Source: Shurefire Sovereign Construction Search (https://shurefire.ng)`;
           <footer className="w-full max-w-7xl mx-auto pt-8 pb-4 border-t border-[#e2e8f0] text-[#64748b] text-xs select-none">
             <div className="flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left">
               <p className="text-[12px] font-normal">
-                Calculations powered by Gemini AI. Real-time pricing sourced from Shurefire Sovereign Marketplace.
+                Intelligent construction calculations and real-time pricing sourced from Shurefire Sovereign Marketplace.
               </p>
               <p className="text-[12px] text-slate-400">
                 &copy; {new Date().getFullYear()} Shurefire. All rights reserved.

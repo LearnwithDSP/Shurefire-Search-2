@@ -123,7 +123,7 @@ export const SerpIntroBanner: React.FC<SerpIntroBannerProps> = ({
                 </h3>
               </div>
               <p className="text-[11px] sm:text-xs text-[#64748b] leading-relaxed">
-                Raw database entries are synthesized by Gemini AI into structured, highly readable reports instead of raw web links.
+                Verified construction entries are synthesized into structured, highly readable reports instead of raw web links.
               </p>
             </div>
           </div>

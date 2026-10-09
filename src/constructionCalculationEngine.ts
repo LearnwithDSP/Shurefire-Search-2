@@ -12,7 +12,10 @@ import {
   DetectedFact,
   MaterialBreakdownRow,
   EvidenceTally,
-  EvidenceLevel
+  EvidenceLevel,
+  CementStageRequirement,
+  CategoryCostRange,
+  RebarScheduleRow
 } from "./constructionIntelligenceTypes.js";
 
 // Standard Nigerian market price benchmarks (default fallbacks when vector sources provide base prices)
@@ -973,7 +976,7 @@ export function calculatePreliminaryBOQ(
     },
     {
       itemNo: 11,
-      category: "Finishes",
+      category: "Plaster & Screed",
       description: "Internal and external 2-coat cement plastering and screeding",
       quantity: Math.round(area * 2.8),
       unit: "m²",
@@ -985,7 +988,7 @@ export function calculatePreliminaryBOQ(
     },
     {
       itemNo: 12,
-      category: "Finishes",
+      category: "Floor Finishes",
       description: "Vitrified porcelain floor tiles (600x600mm) including adhesive & grout",
       quantity: Math.round(area * 1.1),
       unit: "m²",
@@ -994,6 +997,54 @@ export function calculatePreliminaryBOQ(
       basis: "Floor area with 10% cutting waste",
       confidence: "MEDIUM",
       evidenceLevel: "CALCULATED"
+    },
+    {
+      itemNo: 13,
+      category: "Doors / Windows",
+      description: "Powder-coated aluminium casement windows & steel security doors",
+      quantity: Math.max(8, Math.round(area * 0.08)),
+      unit: "Units",
+      unitRate: 85000,
+      amount: Math.max(8, Math.round(area * 0.08)) * 85000,
+      basis: "Architectural opening schedule",
+      confidence: "MEDIUM",
+      evidenceLevel: "ESTIMATED"
+    },
+    {
+      itemNo: 14,
+      category: "Electrical",
+      description: "Conduiting, single-core copper cables, distribution board & accessories",
+      quantity: 1,
+      unit: "Lot",
+      unitRate: Math.round(area * 7500),
+      amount: Math.round(area * 7500),
+      basis: "Standard electrical load allowance",
+      confidence: "MEDIUM",
+      evidenceLevel: "ESTIMATED"
+    },
+    {
+      itemNo: 15,
+      category: "Plumbing",
+      description: "PPR water supply, PVC soil/waste stacks & soakaway connection",
+      quantity: 1,
+      unit: "Lot",
+      unitRate: Math.round(area * 7000),
+      amount: Math.round(area * 7000),
+      basis: "Sanitary plumbing point allowances",
+      confidence: "MEDIUM",
+      evidenceLevel: "ESTIMATED"
+    },
+    {
+      itemNo: 16,
+      category: "Painting",
+      description: "Interior matte emulsion and exterior weather-shield acrylic paint",
+      quantity: Math.round(area * 2.8),
+      unit: "m²",
+      unitRate: 1800,
+      amount: Math.round(area * 2.8 * 1800),
+      basis: "Masonry surface finishing schedule",
+      confidence: "MEDIUM",
+      evidenceLevel: "ESTIMATED"
     }
   ];
 
@@ -1379,6 +1430,33 @@ export function calculateRebarRequirement(
 
   const directAnswer = `Estimated reinforcement requirement: Approx ${totalTonnage} Tonnes of High-Yield TMT Steel`;
 
+  const rebarScheduleTable: RebarScheduleRow[] = [
+    {
+      barDiameter: "16mm TMT High-Yield",
+      length: "12m",
+      numberOfBars: rebar16mm,
+      totalLengthM: rebar16mm * 12,
+      estimatedWeightTonnes: ((rebar16mm * 18.9) / 1000).toFixed(2),
+      evidenceLevel: "CALCULATED"
+    },
+    {
+      barDiameter: "12mm TMT High-Yield",
+      length: "12m",
+      numberOfBars: rebar12mm,
+      totalLengthM: rebar12mm * 12,
+      estimatedWeightTonnes: ((rebar12mm * 10.6) / 1000).toFixed(2),
+      evidenceLevel: "CALCULATED"
+    },
+    {
+      barDiameter: "10mm TMT High-Yield",
+      length: "12m",
+      numberOfBars: rebar10mm,
+      totalLengthM: rebar10mm * 12,
+      estimatedWeightTonnes: ((rebar10mm * 7.4) / 1000).toFixed(2),
+      evidenceLevel: "CALCULATED"
+    }
+  ];
+
   return {
     title: "HOW MUCH REINFORCEMENT REBAR?",
     shortAnswer: directAnswer,
@@ -1387,6 +1465,7 @@ export function calculateRebarRequirement(
     evidenceSummary,
     materialBreakdownTable,
     calculationAnalysis,
+    rebarScheduleTable,
     projectInformationUsed: {
       buildingType: profile.buildingType || "Residential Building",
       floorArea: `${area} m²`,
@@ -1397,7 +1476,8 @@ export function calculateRebarRequirement(
       totalCostNaira: totalSteelCost,
       rebar16mmLengths: rebar16mm,
       rebar12mmLengths: rebar12mm,
-      rebar10mmLengths: rebar10mm
+      rebar10mmLengths: rebar10mm,
+      rebarScheduleTable
     },
     breakdown,
     basisCalculation: `Derived from visible structural drawing dimensions, column grid, and standard Nigerian structural detailing codes.`,
